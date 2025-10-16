@@ -1,5 +1,5 @@
 [versions]
-agp = "8.9.2"
+agp = "8.9.3"
 kotlin = "2.0.21"
 coreKtx = "1.17.0"
 junit = "4.13.2"
@@ -7,13 +7,13 @@ junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.9.4"
 activityCompose = "1.11.0"
-composeBom = "2024.09.00"
+composeBom = "2025.10.00"
 # KSP version must match the Kotlin version line; keep them in sync
 ksp = "2.0.21-1.0.25"
-lifecycle-viewmodel = "2.7.0"      # ViewModel KTX# Kotlin Symbol Processing (if used)
+lifecycle-viewmodel = "2.9.4"      # ViewModel KTX# Kotlin Symbol Processing (if used)
 # --- Hilt Versions ---
-hilt = "2.51.1"                    # Dagger Hilt core version
-hilt-navigation-compose = "1.2.0"  # Hilt integration for Compose Navigation
+hilt = "2.52"                    # Dagger Hilt core version
+hilt-navigation-compose = "1.3.0"  # Hilt integration for Compose Navigation
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

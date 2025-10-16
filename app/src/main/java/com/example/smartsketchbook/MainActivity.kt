@@ -22,8 +22,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SmartSketchbookTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    SketchbookRoute()
+                Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
+                    SketchbookRoute(modifier = Modifier.padding(contentPadding))
                 }
             }
         }

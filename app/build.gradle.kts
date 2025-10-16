@@ -2,20 +2,19 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.ksp)
+    alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.hilt.android)
 
 }
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 android {
     namespace = "com.example.smartsketchbook"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.smartsketchbook"
-        minSdk = 24
-        targetSdk = 35
+        minSdk = 26
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -32,15 +31,26 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
     }
+
+}
+
+// KAPT options for Hilt processors
+kapt {
+    correctErrorTypes = true
+}
+
+// Disable Hilt aggregating task to avoid javapoet-related issues
+hilt {
+    enableAggregatingTask = false
 }
 
 dependencies {
@@ -67,8 +77,9 @@ dependencies {
     // Hilt integration with Compose for @HiltViewModel
     implementation(libs.hilt.navigation.compose)
 
-    // Annotation processing via KSP
-    ksp(libs.hilt.compiler)
+    // Annotation processing via KAPT
+    kapt(libs.hilt.compiler)
 
     implementation("org.tensorflow:tensorflow-lite:2.15.0") // Or the latest stable version
+
 }
