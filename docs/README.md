@@ -12,7 +12,7 @@ An Android app (Jetpack Compose + Hilt) that lets you draw digits/shapes and cla
 
 ### Screenshots
 
-![Sketch Screen](docs/images/Screenshot_20251017_234059.png)
+![Sketch Screen](images/Screenshot_20251017_234059.png)
 
 
 ### Project Structure
