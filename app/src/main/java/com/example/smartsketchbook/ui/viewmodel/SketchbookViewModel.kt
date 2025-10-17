@@ -1,8 +1,10 @@
 package com.example.smartsketchbook.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.SavedStateHandle
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.example.smartsketchbook.ui.state.SketchbookUiState
 import com.example.smartsketchbook.ui.state.DrawingPath
 import com.example.smartsketchbook.ui.state.RenderedPath
@@ -25,6 +27,7 @@ import com.example.smartsketchbook.domain.ml.SketchClassifier
 import com.example.smartsketchbook.domain.ml.ClassificationResult
 import com.example.smartsketchbook.domain.ml.AvailableModel
 import com.example.smartsketchbook.domain.ml.AvailableModels
+import com.example.smartsketchbook.domain.ml.ModelManager
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -39,7 +42,9 @@ import androidx.compose.ui.graphics.toArgb
 @HiltViewModel
 class SketchbookViewModel @Inject constructor(
     private val classifier: SketchClassifier,
-    private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle,
+    @ApplicationContext private val appContext: Context,
+    private val modelManager: ModelManager
 ) : ViewModel() {
 
     // Holds all UI-related state for the Sketchbook screen.
@@ -109,11 +114,29 @@ class SketchbookViewModel @Inject constructor(
 
     fun selectModel(model: AvailableModel) {
         savedStateHandle[MODEL_ID_KEY] = model.id
-        // Reinitialize classifier with new model
+        // Version check: show snackbar if an update is available (simulation)
+        if (modelManager.checkLocalModelStatus(model)) {
+            userMessages.tryEmit("Update Available for ${model.name}. Click to download.")
+        }
+        // Prepare model path: asset or downloaded
+        val pathOrAsset = when (model.source) {
+            com.example.smartsketchbook.domain.ml.ModelSource.ASSET -> model.fileName
+            com.example.smartsketchbook.domain.ml.ModelSource.DOWNLOADED -> {
+                val f = com.example.smartsketchbook.domain.ml.ModelDownloader.downloadModel(
+                    context = appContext,
+                    assetFileName = model.fileName,
+                    targetFileName = model.fileName
+                )
+                // Persist local version upon successful download
+                modelManager.saveModelVersion(model.id, model.version)
+                f.absolutePath
+            }
+        }
+        // Reinitialize classifier with new config (assume 28x28x1 for both simulated models)
         val newCfg = com.example.smartsketchbook.domain.ml.ModelConfig(
-            modelFileName = model.fileName,
-            inputWidth = if (model.id == AvailableModels.Digits.id) 28 else 28,
-            inputHeight = if (model.id == AvailableModels.Digits.id) 28 else 28,
+            modelFileName = pathOrAsset,
+            inputWidth = 28,
+            inputHeight = 28,
             inputChannels = 1
         )
         classifier.loadModel(newCfg, model)

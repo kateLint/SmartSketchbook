@@ -1,6 +1,7 @@
 package com.example.smartsketchbook.di
 
 import com.example.smartsketchbook.domain.ml.ModelConfig
+import com.example.smartsketchbook.domain.ml.ModelManager
 import com.example.smartsketchbook.domain.ml.AvailableModels
 import dagger.Module
 import dagger.Provides

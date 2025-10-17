@@ -79,7 +79,7 @@ class SketchClassifier @Inject constructor(
             }
         }
         try {
-            val interp = Interpreter(loadModelFile(context, config.modelFileName), options)
+            val interp = Interpreter(resolveModelBuffer(config.modelFileName), options)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
             if (nnapiAdded) delegateStatus = "NNAPI Active"
@@ -113,7 +113,7 @@ class SketchClassifier @Inject constructor(
                 gpuDelegate = null
             }
             try {
-                val interp = Interpreter(loadModelFile(context, config.modelFileName), gpuOptions)
+            val interp = Interpreter(resolveModelBuffer(config.modelFileName), gpuOptions)
                 val inputDt = interp.getInputTensor(0).dataType()
                 Log.i("SketchClassifier", "Input DataType (GPU fallback): $inputDt")
                 try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (GPU)", tw) }
@@ -131,7 +131,7 @@ class SketchClassifier @Inject constructor(
             cpuOptions.setNumThreads(effectiveThreads)
             try { cpuOptions.setUseXNNPACK(true) } catch (_: Throwable) {}
             Log.i("SketchClassifier", "Falling back to multi-threaded CPU ($effectiveThreads threads).")
-            val interp = Interpreter(loadModelFile(context, config.modelFileName), cpuOptions)
+            val interp = Interpreter(resolveModelBuffer(config.modelFileName), cpuOptions)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType (CPU): $inputDt")
             try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (CPU)", tw) }
@@ -202,13 +202,27 @@ class SketchClassifier @Inject constructor(
         return ClassificationResult(label = label, confidence = maxValue, scores = outputArray, top3Indices = top3)
     }
 
-    private fun loadModelFile(context: Context, modelPath: String): MappedByteBuffer {
-        val assetFileDescriptor = context.assets.openFd(modelPath)
-        FileInputStream(assetFileDescriptor.fileDescriptor).use { inputStream ->
-            val fileChannel: FileChannel = inputStream.channel
-            val startOffset = assetFileDescriptor.startOffset
-            val declaredLength = assetFileDescriptor.declaredLength
-            return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+    private fun loadModelFileFromAssets(context: Context, modelPath: String): MappedByteBuffer {
+        val afd = context.assets.openFd(modelPath)
+        FileInputStream(afd.fileDescriptor).use { fis ->
+            val channel: FileChannel = fis.channel
+            return channel.map(FileChannel.MapMode.READ_ONLY, afd.startOffset, afd.declaredLength)
+        }
+    }
+
+    private fun loadModelFileFromDisk(filePath: String): MappedByteBuffer {
+        FileInputStream(filePath).use { fis ->
+            val channel: FileChannel = fis.channel
+            val size = channel.size()
+            return channel.map(FileChannel.MapMode.READ_ONLY, 0, size)
+        }
+    }
+
+    private fun resolveModelBuffer(modelFileNameOrPath: String): MappedByteBuffer {
+        return if (modelFileNameOrPath.startsWith("/")) {
+            loadModelFileFromDisk(modelFileNameOrPath)
+        } else {
+            loadModelFileFromAssets(context, modelFileNameOrPath)
         }
     }
 
@@ -403,7 +417,7 @@ class SketchClassifier @Inject constructor(
             opts.setNumThreads(t)
             try { opts.setUseXNNPACK(true) } catch (_: Throwable) {}
             Log.i("SketchClassifier", "Reinit interpreter with CPU threads=$t")
-            val interp = Interpreter(loadModelFile(context, config.modelFileName), opts)
+            val interp = Interpreter(resolveModelBuffer(config.modelFileName), opts)
             try { warmUp(interp) } catch (_: Throwable) {}
             interp
         }
