@@ -59,6 +59,7 @@ fun SketchbookScreen(
             Button(onClick = { viewModel.onCaptureDrawing() }) { Text("Classify") }
             Spacer(modifier = Modifier.width(12.dp))
             Text(text = "Sketchbook Status: ${state.statusMessage}")
+
         }
         Box(
             modifier = Modifier
