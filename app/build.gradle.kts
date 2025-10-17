@@ -103,4 +103,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.15.0") // Or the latest stable version
     implementation("org.tensorflow:tensorflow-lite-gpu:2.15.0")
 
+    // Future TFLite Federated Learning SDK (Placeholder)
+    // implementation("org.tensorflow:tensorflow-lite-federated:LATEST_VERSION")
+
 }

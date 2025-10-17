@@ -122,12 +122,7 @@ fun SketchbookScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(420.dp),
-                viewModel = viewModel,
-                onDrawFinished = { bitmap: Bitmap ->
-                    viewModel.updateStatus(
-                        "Captured ${bitmap.width}x${bitmap.height}"
-                    )
-                }
+                viewModel = viewModel
             )
             if (isClassifying) {
                 Box(modifier = Modifier
@@ -160,7 +155,7 @@ fun SketchbookScreen(
                     val bounds = viewModel.getDrawingBounds()
                     val finalBitmap = bounds?.let { rect ->
                         // Inflate bounds by stroke width/2 + small padding to avoid cutting strokes
-                        val pad = (strokeWidthPx / 2f) + 2f
+                        val pad = (strokeWidthPx / 2f) + 6f
                         val left = floor(rect.left - pad).toInt().coerceIn(0, bmp.width - 1)
                         val top = floor(rect.top - pad).toInt().coerceIn(0, bmp.height - 1)
                         val right = ceil(rect.right + pad).toInt().coerceIn(left + 1, bmp.width)

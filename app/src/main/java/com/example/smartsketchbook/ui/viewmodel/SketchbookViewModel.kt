@@ -19,7 +19,6 @@ import javax.inject.Inject
 import android.graphics.Path as AndroidPath
 import android.graphics.Bitmap
 import android.graphics.RectF
-import com.example.smartsketchbook.utils.BitmapConverter
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import com.example.smartsketchbook.domain.ml.BitmapPreprocessor
@@ -253,6 +252,19 @@ class SketchbookViewModel @Inject constructor(
     }
 
     // Unified motion handler called by UI
+    private var lastDirection: Offset? = null
+    private fun isSharpTurn(prev: Offset, curr: Offset): Boolean {
+        val a = lastDirection ?: return false
+        val b = Offset(curr.x - prev.x, curr.y - prev.y)
+        val dot = a.x * b.x + a.y * b.y
+        val magA = kotlin.math.hypot(a.x.toDouble(), a.y.toDouble()).toFloat()
+        val magB = kotlin.math.hypot(b.x.toDouble(), b.y.toDouble()).toFloat()
+        if (magA == 0f || magB == 0f) return false
+        val cos = (dot / (magA * magB)).coerceIn(-1f, 1f)
+        // Treat angles > ~60 degrees as sharp to preserve corners
+        return cos < 0.5f
+    }
+
     fun handleMotionEvent(offset: androidx.compose.ui.geometry.Offset, action: MotionAction) {
         when (action) {
             is MotionAction.Start -> {
@@ -262,20 +274,30 @@ class SketchbookViewModel @Inject constructor(
                 val composePath = ComposePath().apply { moveTo(offset.x, offset.y) }
                 activePath.value = DrawingPath(path = composePath)
                 lastPoint = Offset(offset.x, offset.y)
+                lastDirection = null
             }
             is MotionAction.Move -> {
                 val previous = lastPoint ?: Offset(offset.x, offset.y)
                 val current = Offset(offset.x, offset.y)
                 val mid = Offset((previous.x + current.x) / 2f, (previous.y + current.y) / 2f)
 
-                _currentPath.value?.quadTo(previous.x, previous.y, mid.x, mid.y)
+                if (isSharpTurn(previous, current)) {
+                    _currentPath.value?.lineTo(current.x, current.y)
+                } else {
+                    _currentPath.value?.quadTo(previous.x, previous.y, mid.x, mid.y)
+                }
 
                 val newPath = ComposePath().apply {
                     activePath.value?.path?.let { existing -> addPath(existing) }
-                    quadraticBezierTo(previous.x, previous.y, mid.x, mid.y)
+                    if (isSharpTurn(previous, current)) {
+                        lineTo(current.x, current.y)
+                    } else {
+                        quadraticBezierTo(previous.x, previous.y, mid.x, mid.y)
+                    }
                 }
                 activePath.value = DrawingPath(path = newPath)
                 lastPoint = current
+                lastDirection = Offset(current.x - previous.x, current.y - previous.y)
             }
             is MotionAction.End -> {
                 _currentPath.value?.let { finished ->
@@ -284,6 +306,7 @@ class SketchbookViewModel @Inject constructor(
                 _currentPath.value = null
                 activePath.value = null
                 lastPoint = null
+                lastDirection = null
             }
         }
     }
@@ -342,21 +365,7 @@ class SketchbookViewModel @Inject constructor(
         }
     }
 
-    fun exportBitmap(
-        canvasWidth: Int,
-        canvasHeight: Int,
-        strokeWidth: Float,
-        onExported: (Bitmap) -> Unit
-    ) {
-        val bitmap = BitmapConverter.toMonochrome28x28(
-            width = canvasWidth,
-            height = canvasHeight,
-            paths = _renderedPaths.value.map { it.path },
-            currentPath = _currentPath.value,
-            strokeWidth = strokeWidth
-        )
-        onExported(bitmap)
-    }
+    // Removed legacy export path; capture now handled by CanvasRenderer in UI
 
     fun getDrawingBounds(): RectF? {
         val allPaths = buildList {

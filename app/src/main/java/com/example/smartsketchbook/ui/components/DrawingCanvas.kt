@@ -41,7 +41,6 @@ import androidx.compose.ui.platform.testTag
 
 @Composable
 fun DrawingCanvas(
-    onDrawFinished: (Bitmap) -> Unit,
     viewModel: SketchbookViewModel,
     modifier: Modifier = Modifier,
     strokeWidthDp: Dp = 12.dp,
@@ -123,16 +122,7 @@ fun DrawingCanvas(
                                     Offset.Zero,
                                     SketchbookViewModel.MotionAction.End
                                 )
-                            }
-                            // Optional: auto-predict on finger release
-                            if (canvasSize.width > 0 && canvasSize.height > 0) {
-                                viewModel.exportBitmap(
-                                    canvasWidth = canvasSize.width,
-                                    canvasHeight = canvasSize.height,
-                                    strokeWidth = strokeWidthPx,
-                                    onExported = onDrawFinished
-                                )
-                            }
+                        }
                         },
                         onDragCancel = {
                             val finalOffset = lastOffset ?: Offset.Zero
@@ -167,41 +157,9 @@ fun DrawingCanvas(
                 .align(Alignment.BottomCenter)
                 .padding(12.dp)
         ) {
-            Button(onClick = { viewModel.undoLast() }) {
-                Text(text = "Undo")
-            }
+            Button(onClick = { viewModel.undoLast() }) { Text(text = "Undo") }
             Spacer(modifier = Modifier.width(12.dp))
-            Button(onClick = { viewModel.clearCanvas() }) {
-                Text(text = "Clear")
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Button(
-                enabled = canvasSize.width > 0 && canvasSize.height > 0,
-                onClick = {
-                    viewModel.exportBitmap(
-                        canvasWidth = canvasSize.width,
-                        canvasHeight = canvasSize.height,
-                        strokeWidth = strokeWidthPx,
-                        onExported = onDrawFinished
-                    )
-                }
-            ) {
-                Text(text = "Finish")
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Button(
-                enabled = canvasSize.width > 0 && canvasSize.height > 0,
-                onClick = {
-                    viewModel.exportBitmap(
-                        canvasWidth = canvasSize.width,
-                        canvasHeight = canvasSize.height,
-                        strokeWidth = strokeWidthPx,
-                        onExported = onDrawFinished
-                    )
-                }
-            ) {
-                Text(text = "Predict")
-            }
+            Button(onClick = { viewModel.clearCanvas() }) { Text(text = "Clear") }
         }
     }
 }

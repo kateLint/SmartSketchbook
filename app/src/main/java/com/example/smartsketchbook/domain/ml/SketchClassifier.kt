@@ -262,7 +262,8 @@ class SketchClassifier @Inject constructor(
 
         // Prepare input bitmap at expected size using reusable target when matches classifier target
         val inputBitmap = if (inWidth == targetSize && inHeight == targetSize) {
-            BitmapPreprocessor.preprocessInto(bitmap, reusableInputBitmap, targetSize)
+            val fit = if (inChannels == 3) 0.85f else 0.75f
+            BitmapPreprocessor.preprocessInto(bitmap, reusableInputBitmap, targetSize, centerByMass = true, fitFraction = fit)
             reusableInputBitmap
         } else if (bitmap.width != inWidth || bitmap.height != inHeight) {
             bitmap.scale(inWidth, inHeight)

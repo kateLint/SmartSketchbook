@@ -158,8 +158,11 @@ object BitmapPreprocessor {
                 val b = (c and 0xFF)
                 if (channels == 1) {
                     val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
-                    // Invert to match MNIST-style white digit on black background
-                    dest.put(1f - gray)
+                    // Invert and apply gentle contrast curve (no hard threshold)
+                    val inv = 1f - gray
+                    val boosted = (inv * 1.15f).coerceIn(0f, 1f)
+                    val curved = kotlin.math.sqrt(boosted)
+                    dest.put(curved)
                 } else {
                     dest.put(r / 255.0f)
                     dest.put(g / 255.0f)

@@ -8,20 +8,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.example.smartsketchbook.domain.ml.AvailableModels
-import com.example.smartsketchbook.domain.ml.SketchClassifier
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.smartsketchbook.ui.viewmodel.SketchbookViewModel
 
 @Composable
 fun ConfidenceBarDisplay(scores: FloatArray, topIndex: Int) {
+    val viewModel: SketchbookViewModel = hiltViewModel()
+    val currentModel = viewModel.currentModel.collectAsState().value
     Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         val totalWidth = 1f
         for (i in scores.indices) {
-            // Prefer dynamic labels based on current model file name; fallback to MNIST labels
-            val currentModel = try { AvailableModels.All.firstOrNull { it.fileName == "shapes_classifier.tflite" } } catch (_: Throwable) { null }
-            val dynamicLabel = currentModel?.labels?.getOrNull(i)
+            val dynamicLabel = currentModel.labels.getOrNull(i)
             val label = dynamicLabel ?: com.example.smartsketchbook.domain.ml.ModelLabels.MNIST_LABELS.getOrNull(i) ?: i.toString()
             val v = scores[i].coerceIn(0f, 1f)
             val barColor = if (i == topIndex) Color(0xFF2E7D32) else Color(0xFF90A4AE)
