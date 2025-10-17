@@ -16,6 +16,8 @@ import androidx.compose.foundation.border
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,6 +68,7 @@ fun SketchbookScreen(
     val classified by viewModel.classifiedBitmap.collectAsState()
     val result by viewModel.classificationResult.collectAsState()
     val isClassifying by viewModel.isClassifying.collectAsState()
+    val cpuThreads by viewModel.cpuThreadCount.collectAsState()
     val strokeWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
     Column(modifier = modifier.padding(16.dp)) {
         Row {
@@ -85,6 +88,23 @@ fun SketchbookScreen(
                         .padding(2.dp)
                 )
             }
+        }
+
+        // CPU Threads control (1..8 mapped from slider 0f..1f)
+        val sliderValue = remember(cpuThreads) { mutableStateOf((cpuThreads - 1) / 7f) }
+        Row(modifier = Modifier.padding(top = 8.dp)) {
+            Text("CPU Threads: $cpuThreads", modifier = Modifier.align(Alignment.CenterVertically))
+            Spacer(modifier = Modifier.width(12.dp))
+            Slider(
+                value = sliderValue.value,
+                onValueChange = {
+                    sliderValue.value = it
+                    val threads = 1 + (it * 7f).toInt().coerceIn(0, 7)
+                    viewModel.setCpuThreads(threads)
+                },
+                modifier = Modifier.width(200.dp),
+                colors = SliderDefaults.colors()
+            )
         }
 
         result?.let {

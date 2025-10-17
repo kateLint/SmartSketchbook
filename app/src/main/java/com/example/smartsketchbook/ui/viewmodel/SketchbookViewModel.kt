@@ -70,6 +70,19 @@ class SketchbookViewModel @Inject constructor(
     val currentDrawingColor: MutableStateFlow<Color> = MutableStateFlow(Color.Black)
     fun setDrawingColor(color: Color) { currentDrawingColor.value = color }
 
+    // CPU thread count control
+    val cpuThreadCount: MutableStateFlow<Int> = MutableStateFlow(classifier.defaultCpuThreads())
+    fun setCpuThreads(threads: Int) { cpuThreadCount.value = threads }
+
+    init {
+        // Reinitialize interpreter when CPU thread count changes
+        viewModelScope.launch {
+            cpuThreadCount.collect { t ->
+                classifier.reinitializeForCpuThreads(t)
+            }
+        }
+    }
+
     // Track previous touch point for path smoothing
     private var lastPoint: Offset? = null
 

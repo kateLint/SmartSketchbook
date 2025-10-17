@@ -18,6 +18,7 @@ import org.tensorflow.lite.Delegate
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import android.os.Build
 import androidx.core.os.TraceCompat
+import androidx.core.graphics.scale
 
 /**
  * Loads a TensorFlow Lite model from assets and provides a minimal inference API.
@@ -32,7 +33,9 @@ class SketchClassifier @Inject constructor(
 
     private var nnApiDelegate: Delegate? = null
     private var gpuDelegate: Delegate? = null
-    private val interpreter: Interpreter by lazy {
+    private var interpreter: Interpreter = buildInterpreter()
+
+    private fun buildInterpreter(cpuThreads: Int? = null): Interpreter {
         val options = Interpreter.Options()
         // Skip delegates on emulators to avoid known GL/NNAPI issues
         val onEmulator = isProbablyEmulator()
@@ -77,7 +80,7 @@ class SketchClassifier @Inject constructor(
             Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
             // Warm-up: run a few dummy inferences to eliminate cold-start cost
             try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed", tw) }
-            interp
+            return interp
         } catch (eFirst: Exception) {
             Log.e("SketchClassifier", "Failed to init interpreter with current delegates. Trying fallbacks...", eFirst)
             // Close any existing delegates
@@ -87,9 +90,7 @@ class SketchClassifier @Inject constructor(
             gpuDelegate = null
 
             // Try GPU-only
-            val gpuOptions = Interpreter.Options().apply {
-                setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-            }
+            val gpuOptions = Interpreter.Options()
             try {
                 val compatClazz = Class.forName("org.tensorflow.lite.gpu.CompatibilityList")
                 val compat = compatClazz.getConstructor().newInstance()
@@ -110,7 +111,7 @@ class SketchClassifier @Inject constructor(
                 val inputDt = interp.getInputTensor(0).dataType()
                 Log.i("SketchClassifier", "Input DataType (GPU fallback): $inputDt")
                 try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (GPU)", tw) }
-                return@lazy interp
+                return interp
             } catch (eGpu: Exception) {
                 Log.e("SketchClassifier", "GPU fallback failed; trying CPU.", eGpu)
                 try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
@@ -119,8 +120,7 @@ class SketchClassifier @Inject constructor(
 
             // CPU-only
             val cpuOptions = Interpreter.Options()
-            val numThreads = Runtime.getRuntime().availableProcessors()
-            val effectiveThreads = maxOf(1, minOf(4, numThreads))
+            val effectiveThreads = cpuThreads ?: defaultCpuThreads()
             cpuOptions.setNumThreads(effectiveThreads)
             try { cpuOptions.setUseXNNPACK(true) } catch (_: Throwable) {}
             Log.i("SketchClassifier", "Falling back to multi-threaded CPU ($effectiveThreads threads).")
@@ -128,7 +128,7 @@ class SketchClassifier @Inject constructor(
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType (CPU): $inputDt")
             try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (CPU)", tw) }
-            interp
+            return interp
         }
     }
 
@@ -204,7 +204,7 @@ class SketchClassifier @Inject constructor(
             BitmapPreprocessor.preprocessInto(bitmap, reusableInputBitmap, targetSize)
             reusableInputBitmap
         } else if (bitmap.width != inWidth || bitmap.height != inHeight) {
-            Bitmap.createScaledBitmap(bitmap, inWidth, inHeight, true)
+            bitmap.scale(inWidth, inHeight)
         } else bitmap
 
         // Allocate input buffer; prefer FloatBuffer for FLOAT32 models
@@ -348,6 +348,31 @@ class SketchClassifier @Inject constructor(
     }
 
     private companion object {}
+
+    fun defaultCpuThreads(maxCap: Int = 8): Int {
+        val cores = Runtime.getRuntime().availableProcessors()
+        return maxOf(1, minOf(maxCap, cores))
+    }
+
+    @Synchronized
+    fun reinitializeForCpuThreads(threads: Int) {
+        try { nnApiDelegate?.javaClass?.getMethod("close")?.invoke(nnApiDelegate) } catch (_: Exception) {}
+        try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
+        nnApiDelegate = null
+        gpuDelegate = null
+        try { interpreter.close() } catch (_: Exception) {}
+        interpreter = run {
+            // Build CPU-only interpreter with user threads
+            val opts = Interpreter.Options()
+            val t = maxOf(1, threads)
+            opts.setNumThreads(t)
+            try { opts.setUseXNNPACK(true) } catch (_: Throwable) {}
+            Log.i("SketchClassifier", "Reinit interpreter with CPU threads=$t")
+            val interp = Interpreter(loadModelFile(context, config.modelFileName), opts)
+            try { warmUp(interp) } catch (_: Throwable) {}
+            interp
+        }
+    }
 
     private fun warmUp(interp: Interpreter) {
         val inTensor = interp.getInputTensor(0)
