@@ -17,6 +17,7 @@ import java.nio.channels.FileChannel
 import org.tensorflow.lite.Delegate
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import android.os.Build
+import androidx.core.os.TraceCompat
 
 /**
  * Loads a TensorFlow Lite model from assets and provides a minimal inference API.
@@ -77,6 +78,8 @@ class SketchClassifier @Inject constructor(
             val interp = Interpreter(loadModelFile(context, config.modelFileName), options)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
+            // Warm-up: run a few dummy inferences to eliminate cold-start cost
+            try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed", tw) }
             interp
         } catch (eFirst: Exception) {
             Log.e("SketchClassifier", "Failed to init interpreter with current delegates. Trying fallbacks...", eFirst)
@@ -109,6 +112,7 @@ class SketchClassifier @Inject constructor(
                 val interp = Interpreter(loadModelFile(context, config.modelFileName), gpuOptions)
                 val inputDt = interp.getInputTensor(0).dataType()
                 Log.i("SketchClassifier", "Input DataType (GPU fallback): $inputDt")
+                try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (GPU)", tw) }
                 return@lazy interp
             } catch (eGpu: Exception) {
                 Log.e("SketchClassifier", "GPU fallback failed; trying CPU.", eGpu)
@@ -123,6 +127,7 @@ class SketchClassifier @Inject constructor(
             val interp = Interpreter(loadModelFile(context, config.modelFileName), cpuOptions)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType (CPU): $inputDt")
+            try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (CPU)", tw) }
             interp
         }
     }
@@ -177,6 +182,8 @@ class SketchClassifier @Inject constructor(
      * Returns the first output tensor as a flattened FloatArray (normalized if quantized).
      */
     fun classify(bitmap: Bitmap): FloatArray {
+        TraceCompat.beginSection("SketchClassifier:EndToEnd")
+        try {
         // Infer input tensor shape and type
         val inputTensor = interpreter.getInputTensor(0)
         val inShape = inputTensor.shape() // e.g., [1, height, width, channels]
@@ -280,20 +287,24 @@ class SketchClassifier @Inject constructor(
                         outputArray2D = Array(1) { FloatArray(numClasses) }
                     }
                     val out2D = outputArray2D!!
+                    TraceCompat.beginSection("TFLite:InferenceOnly")
                     val t0 = System.nanoTime()
                     interpreter.run(inputBuffer, out2D)
                     val dtMs = (System.nanoTime() - t0) / 1_000_000.0
-                    Log.d("SketchClassifier", "Inference time: ${dtMs}ms")
+                    TraceCompat.endSection()
+                    Log.d("SketchClassifier", "InferenceOnly: ${dtMs}ms")
                     return out2D[0]
                 } else if (rank == 1) {
                     if (outputArray == null || outputArray!!.size != numClasses) {
                         outputArray = FloatArray(numClasses)
                     }
                     val out = outputArray!!
+                    TraceCompat.beginSection("TFLite:InferenceOnly")
                     val t0 = System.nanoTime()
                     interpreter.run(inputBuffer, out)
                     val dtMs = (System.nanoTime() - t0) / 1_000_000.0
-                    Log.d("SketchClassifier", "Inference time: ${dtMs}ms")
+                    TraceCompat.endSection()
+                    Log.d("SketchClassifier", "InferenceOnly: ${dtMs}ms")
                     return out
                 }
             }
@@ -309,7 +320,12 @@ class SketchClassifier @Inject constructor(
         }
         val outputBuffer = ByteBuffer.allocateDirect(outElems * outBytesPerElem).order(ByteOrder.nativeOrder())
         try {
+            TraceCompat.beginSection("TFLite:InferenceOnly")
+            val t0 = System.nanoTime()
             interpreter.run(inputBuffer, outputBuffer)
+            val dtMs = (System.nanoTime() - t0) / 1_000_000.0
+            TraceCompat.endSection()
+            Log.d("SketchClassifier", "InferenceOnly: ${dtMs}ms")
         } catch (e: Exception) {
             Log.e("SketchClassifier", "Interpreter.run failed with outShape=${outShape.joinToString()}", e)
             throw e
@@ -326,9 +342,38 @@ class SketchClassifier @Inject constructor(
             else -> Unit
         }
         return result
+        } finally {
+            TraceCompat.endSection()
+        }
     }
 
     private companion object {}
+
+    private fun warmUp(interp: Interpreter) {
+        val inTensor = interp.getInputTensor(0)
+        val inShape = inTensor.shape()
+        val inType = inTensor.dataType()
+        val batch = inShape[0]
+        val h = inShape[1]
+        val w = inShape[2]
+        val c = inShape[3]
+        val inElems = batch * h * w * c
+        val input: Any = when (inType) {
+            DataType.FLOAT32 -> ByteBuffer.allocateDirect(inElems * 4).order(ByteOrder.nativeOrder())
+            DataType.UINT8, DataType.INT8 -> ByteBuffer.allocateDirect(inElems).order(ByteOrder.nativeOrder())
+            else -> ByteBuffer.allocateDirect(inElems * 4).order(ByteOrder.nativeOrder())
+        }
+        val outTensor = interp.getOutputTensor(0)
+        val outShape = outTensor.shape()
+        val n = outShape.last()
+        val outAny: Any = if (outShape.size == 2 && outShape[0] == 1) Array(1) { FloatArray(n) } else FloatArray(n)
+        repeat(3) {
+            try {
+                interp.run(input, outAny)
+            } catch (_: Throwable) {}
+        }
+        Log.i("SketchClassifier", "Warm-up complete")
+    }
 
     private fun isProbablyEmulator(): Boolean {
         return (Build.FINGERPRINT.startsWith("generic")
