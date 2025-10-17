@@ -31,7 +31,11 @@ class SketchClassifier @Inject constructor(
             // XNNPACK/NNAPI may be enabled by default depending on TF Lite version
         }
         try {
-            Interpreter(loadModelFile(context, config.modelFileName), options)
+            val interp = Interpreter(loadModelFile(context, config.modelFileName), options)
+            // Log discovered input data type for Day 17
+            val inputDt = interp.getInputTensor(0).dataType()
+            Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
+            interp
         } catch (e: Exception) {
             Log.e("SketchClassifier", "Failed to load TFLite model: ${config.modelFileName}", e)
             throw e
@@ -42,8 +46,12 @@ class SketchClassifier @Inject constructor(
     private val targetSize: Int = config.inputWidth // assume square or use both dims
     private val reusableInputBitmap: Bitmap = Bitmap.createBitmap(config.inputWidth, config.inputHeight, Bitmap.Config.ARGB_8888)
     private var inputFloatBuffer: FloatBuffer? = null
+    private var inputFloatByteBuffer: ByteBuffer? = null
+    private var inputByteBuffer: ByteBuffer? = null
     private var outputArray: FloatArray? = null
     private var outputArray2D: Array<FloatArray>? = null
+    // Toggle to simulate INT8 path during testing (set true to force int8 pipeline)
+    private var forceSimulateInt8: Boolean = false
 
     /**
      * Run inference with a simple single-input/single-output signature.
@@ -84,7 +92,8 @@ class SketchClassifier @Inject constructor(
         // Infer input tensor shape and type
         val inputTensor = interpreter.getInputTensor(0)
         val inShape = inputTensor.shape() // e.g., [1, height, width, channels]
-        val inType = inputTensor.dataType()
+        var inType = inputTensor.dataType()
+        if (forceSimulateInt8) inType = DataType.UINT8
         val inHeight = if (inShape.size >= 2) inShape[1] else config.inputHeight
         val inWidth = if (inShape.size >= 3) inShape[2] else config.inputWidth
         val inChannels = if (inShape.size >= 4) inShape[3] else config.inputChannels
@@ -108,17 +117,12 @@ class SketchClassifier @Inject constructor(
         var inputFloatView: FloatBuffer? = null
         val inputBuffer: ByteBuffer = when (inType) {
             DataType.FLOAT32 -> {
-                val byteBuf = (inputFloatBuffer?.let { it.capacity() == numInputElems }?.takeIf { it }?.let {
-                    // reuse backing buffer
-                    inputFloatBuffer!!.rewind()
-                    inputFloatBuffer!!.let { (it as java.nio.Buffer).rewind(); it }
-                    (inputFloatBuffer as java.nio.Buffer).let { (it as java.nio.Buffer).rewind() }
-                    // we cannot get underlying ByteBuffer from FloatBuffer portably; re-create
-                    ByteBuffer.allocateDirect(numInputElems * 4).order(ByteOrder.nativeOrder())
-                } ?: run {
-                    inputFloatBuffer = null
-                    ByteBuffer.allocateDirect(numInputElems * 4).order(ByteOrder.nativeOrder())
-                })
+                val byteBuf = if (inputFloatByteBuffer == null || inputFloatByteBuffer!!.capacity() != numInputElems * 4) {
+                    inputFloatByteBuffer = ByteBuffer.allocateDirect(numInputElems * 4).order(ByteOrder.nativeOrder())
+                    inputFloatByteBuffer!!
+                } else {
+                    inputFloatByteBuffer!!.rewind(); inputFloatByteBuffer!!
+                }
                 val floatView: FloatBuffer = byteBuf.asFloatBuffer()
                 BitmapPreprocessor.bitmapToFloatBuffer(inputBitmap, channels = inChannels, dest = floatView)
                 // Log first few normalized values for verification (should be in [0,1])
@@ -134,8 +138,13 @@ class SketchClassifier @Inject constructor(
                 byteBuf.rewind()
                 byteBuf
             }
-            DataType.UINT8 -> {
-                val byteBuf = ByteBuffer.allocateDirect(numInputElems).order(ByteOrder.nativeOrder())
+            DataType.UINT8, DataType.INT8 -> {
+                val byteBuf = if (inputByteBuffer == null || inputByteBuffer!!.capacity() != numInputElems) {
+                    inputByteBuffer = ByteBuffer.allocateDirect(numInputElems).order(ByteOrder.nativeOrder())
+                    inputByteBuffer!!
+                } else {
+                    inputByteBuffer!!.rewind(); inputByteBuffer!!
+                }
                 val pixels = IntArray(inWidth * inHeight)
                 inputBitmap.getPixels(pixels, 0, inWidth, 0, 0, inWidth, inHeight)
                 var idx = 0
@@ -147,7 +156,9 @@ class SketchClassifier @Inject constructor(
                         val b = c and 0xFF
                         if (inChannels == 1) {
                             val gray = (0.299f * r + 0.587f * g + 0.114f * b)
-                            byteBuf.put(gray.toInt().toByte())
+                            // Keep polarity consistent with float path (white digit on black): intensity = 255 - gray
+                            val v = (255f - gray).toInt().coerceIn(0, 255)
+                            byteBuf.put(v.toByte())
                         } else if (inChannels == 3) {
                             byteBuf.put(r.toByte())
                             byteBuf.put(g.toByte())
