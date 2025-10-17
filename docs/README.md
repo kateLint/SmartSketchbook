@@ -12,17 +12,8 @@ An Android app (Jetpack Compose + Hilt) that lets you draw digits/shapes and cla
 
 ### Screenshots
 
-Place screenshots here (or replace with your own):
+![Sketch Screen](docs/images/Screenshot_20251017_234059.png)
 
-![Sketch Screen](docs/images/sketch_screen.png)
-![Settings](docs/images/settings_screen.png)
-
-Create the images folder:
-
-```
-mkdir -p docs/images
-# Save PNGs into docs/images
-```
 
 ### Project Structure
 - `app/src/main/java/com/example/smartsketchbook/ui/` — Compose UI (screens, components)
@@ -73,7 +64,5 @@ mkdir -p docs/images
 - If INT8 model misclassifies (6→5/9), prefer the dynamic (float) model.
 - You can retrain/export models with the provided Python script (see docs/Model Maker workflow).
 
-### License
-MIT (or your chosen license)
 
 
