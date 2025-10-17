@@ -42,6 +42,7 @@ import com.example.smartsketchbook.ui.components.DrawingCanvas
 import com.example.smartsketchbook.ui.state.SketchbookUiState
 import com.example.smartsketchbook.ui.viewmodel.SketchbookViewModel
 import com.example.smartsketchbook.ui.util.captureComposableToBitmap
+import com.example.smartsketchbook.ui.util.CanvasRenderer
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -65,11 +66,12 @@ fun SketchbookScreen(
     val classified by viewModel.classifiedBitmap.collectAsState()
     val result by viewModel.classificationResult.collectAsState()
     val isClassifying by viewModel.isClassifying.collectAsState()
+    val strokeWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
     Column(modifier = modifier.padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
             Spacer(modifier = Modifier.width(12.dp))
-            Button(onClick = { viewModel.onCaptureDrawing() }, enabled = !isClassifying) { Text(if (isClassifying) "Classifying..." else "Classify") }
+            Button(onClick = { viewModel.onCaptureDrawing() }, enabled = !isClassifying) { Text(if (isClassifying) "Capturing..." else "Capture") }
             Spacer(modifier = Modifier.width(12.dp))
             Text(text = "Sketchbook Status: ${state.statusMessage}")
             Spacer(modifier = Modifier.width(12.dp))
@@ -123,19 +125,22 @@ fun SketchbookScreen(
             viewModel.captureRequests.collect {
                 val size = captureSize.value
                 if (size.width > 0 && size.height > 0) {
-                    val bmp = captureComposableToBitmap(
-                        context = context,
+                    // Avoid offscreen ComposeView to prevent windowRecomposer crash; render via Android canvas
+                    val bmp = CanvasRenderer.renderToBitmap(
                         widthPx = size.width,
-                        heightPx = size.height
-                    ) {
-                        CapturableDrawing(viewModel = viewModel)
-                    }
+                        heightPx = size.height,
+                        renderedPaths = viewModel.renderedPaths.value,
+                        activeComposePath = viewModel.activePath.value?.path,
+                        strokeWidthPx = strokeWidthPx
+                    )
                     val bounds = viewModel.getDrawingBounds()
                     val finalBitmap = bounds?.let { rect ->
-                        val left = floor(rect.left).toInt().coerceIn(0, bmp.width - 1)
-                        val top = floor(rect.top).toInt().coerceIn(0, bmp.height - 1)
-                        val right = ceil(rect.right).toInt().coerceIn(left + 1, bmp.width)
-                        val bottom = ceil(rect.bottom).toInt().coerceIn(top + 1, bmp.height)
+                        // Inflate bounds by stroke width/2 + small padding to avoid cutting strokes
+                        val pad = (strokeWidthPx / 2f) + 2f
+                        val left = floor(rect.left - pad).toInt().coerceIn(0, bmp.width - 1)
+                        val top = floor(rect.top - pad).toInt().coerceIn(0, bmp.height - 1)
+                        val right = ceil(rect.right + pad).toInt().coerceIn(left + 1, bmp.width)
+                        val bottom = ceil(rect.bottom + pad).toInt().coerceIn(top + 1, bmp.height)
                         val width = (right - left).coerceAtLeast(1)
                         val height = (bottom - top).coerceAtLeast(1)
                         Bitmap.createBitmap(bmp, left, top, width, height)

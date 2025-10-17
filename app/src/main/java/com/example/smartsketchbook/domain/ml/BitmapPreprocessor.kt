@@ -118,7 +118,8 @@ object BitmapPreprocessor {
                 val b = (c and 0xFF)
                 if (channels == 1) {
                     val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
-                    dest.put(gray)
+                    // Invert to match MNIST-style white digit on black background
+                    dest.put(1f - gray)
                 } else {
                     dest.put(r / 255.0f)
                     dest.put(g / 255.0f)

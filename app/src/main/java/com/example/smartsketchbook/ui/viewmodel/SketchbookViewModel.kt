@@ -197,9 +197,10 @@ class SketchbookViewModel @Inject constructor(
                 val logits = classifier.classify(preprocessed)
                 val result = classifier.processOutput(logits)
                 _classificationResult.value = result
-                updateStatus("${'$'}{result.label} (${String.format("%.1f%%", result.confidence * 100f)})")
+                updateStatus("${result.label} (${String.format("%.1f%%", result.confidence * 100f)})")
             }.onFailure {
-                updateStatus("Classification failed")
+                val msg = it.message ?: it.javaClass.simpleName
+                updateStatus("Classification failed: $msg")
             }.also {
                 isClassifying.value = false
             }

@@ -38,6 +38,7 @@ class SketchClassifier @Inject constructor(
     private val reusableInputBitmap: Bitmap = Bitmap.createBitmap(config.inputWidth, config.inputHeight, Bitmap.Config.ARGB_8888)
     private var inputFloatBuffer: FloatBuffer? = null
     private var outputArray: FloatArray? = null
+    private var outputArray2D: Array<FloatArray>? = null
 
     /**
      * Run inference with a simple single-input/single-output signature.
@@ -55,7 +56,8 @@ class SketchClassifier @Inject constructor(
         if (outputArray.isEmpty()) return ClassificationResult(label = "N/A", confidence = 0f)
         val maxIndex = outputArray.indices.maxByOrNull { outputArray[it] } ?: 0
         val maxValue = outputArray[maxIndex]
-        val label = "Predicted: $maxIndex"
+        val labelStr = ModelLabels.MNIST_LABELS.getOrNull(maxIndex) ?: maxIndex.toString()
+        val label = "Predicted: $labelStr"
         return ClassificationResult(label = label, confidence = maxValue)
     }
 
@@ -157,14 +159,26 @@ class SketchClassifier @Inject constructor(
 
         // Simple path: 1xN FLOAT32 => FloatArray(N) with interpreter.run(input, outputArray)
         if (outType == DataType.FLOAT32 && outShape.isNotEmpty()) {
+            val rank = outShape.size
             val numClasses = outShape.last()
             if (numClasses > 0) {
-                if (outputArray == null || outputArray!!.size != numClasses) {
-                    outputArray = FloatArray(numClasses)
+                if (rank == 2 && outShape[0] == 1) {
+                    // Model outputs [1, numClasses] → use 2D array and then return row 0
+                    val needAlloc = outputArray2D == null || outputArray2D!!.size != 1 || outputArray2D!![0].size != numClasses
+                    if (needAlloc) {
+                        outputArray2D = Array(1) { FloatArray(numClasses) }
+                    }
+                    val out2D = outputArray2D!!
+                    interpreter.run(inputBuffer, out2D)
+                    return out2D[0]
+                } else if (rank == 1) {
+                    if (outputArray == null || outputArray!!.size != numClasses) {
+                        outputArray = FloatArray(numClasses)
+                    }
+                    val out = outputArray!!
+                    interpreter.run(inputBuffer, out)
+                    return out
                 }
-                val out = outputArray!!
-                interpreter.run(inputBuffer, out)
-                return out
             }
         }
 
