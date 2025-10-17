@@ -11,7 +11,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.example.smartsketchbook.ui.navigation.Screen
 import com.example.smartsketchbook.ui.screen.SketchbookRoute
+import com.example.smartsketchbook.ui.screen.SettingsScreen
 import com.example.smartsketchbook.ui.theme.SmartSketchbookTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -23,7 +28,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             SmartSketchbookTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
-                    SketchbookRoute(modifier = Modifier.padding(contentPadding))
+                    val navController = rememberNavController()
+                    NavHost(
+                        navController = navController,
+                        startDestination = Screen.Sketchbook.route,
+                        modifier = Modifier.padding(contentPadding)
+                    ) {
+                        composable(Screen.Sketchbook.route) {
+                            SketchbookRoute()
+                        }
+                        composable(Screen.Settings.route) {
+                            SettingsScreen(navController = navController)
+                        }
+                    }
                 }
             }
         }

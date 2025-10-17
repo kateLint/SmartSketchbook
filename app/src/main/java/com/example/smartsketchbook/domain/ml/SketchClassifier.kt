@@ -34,6 +34,9 @@ class SketchClassifier @Inject constructor(
     private var nnApiDelegate: Delegate? = null
     private var gpuDelegate: Delegate? = null
     private var interpreter: Interpreter = buildInterpreter()
+    @Volatile private var delegateStatus: String = "Initializing"
+
+    fun getDelegateStatus(): String = delegateStatus
 
     private fun buildInterpreter(cpuThreads: Int? = null): Interpreter {
         val options = Interpreter.Options()
@@ -66,6 +69,7 @@ class SketchClassifier @Inject constructor(
                     options.addDelegate(delegate)
                     gpuDelegate = delegate
                     Log.i("SketchClassifier", "GPU Delegate enabled.")
+                    delegateStatus = "GPU Active"
                 } else {
                     Log.i("SketchClassifier", "GPU Delegate not supported on this device. Using CPU.")
                 }
@@ -78,6 +82,8 @@ class SketchClassifier @Inject constructor(
             val interp = Interpreter(loadModelFile(context, config.modelFileName), options)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
+            if (nnapiAdded) delegateStatus = "NNAPI Active"
+            if (!nnapiAdded && gpuDelegate != null) delegateStatus = "GPU Active"
             // Warm-up: run a few dummy inferences to eliminate cold-start cost
             try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed", tw) }
             return interp
@@ -111,6 +117,7 @@ class SketchClassifier @Inject constructor(
                 val inputDt = interp.getInputTensor(0).dataType()
                 Log.i("SketchClassifier", "Input DataType (GPU fallback): $inputDt")
                 try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (GPU)", tw) }
+                delegateStatus = "GPU Active"
                 return interp
             } catch (eGpu: Exception) {
                 Log.e("SketchClassifier", "GPU fallback failed; trying CPU.", eGpu)
@@ -128,6 +135,7 @@ class SketchClassifier @Inject constructor(
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType (CPU): $inputDt")
             try { warmUp(interp) } catch (tw: Throwable) { Log.w("SketchClassifier", "Warm-up failed (CPU)", tw) }
+            delegateStatus = "CPU Multi-threaded Active ($effectiveThreads)"
             return interp
         }
     }
@@ -159,12 +167,14 @@ class SketchClassifier @Inject constructor(
     }
 
     fun processOutput(outputArray: FloatArray): ClassificationResult {
-        if (outputArray.isEmpty()) return ClassificationResult(label = "N/A", confidence = 0f)
-        val maxIndex = outputArray.indices.maxByOrNull { outputArray[it] } ?: 0
+        if (outputArray.isEmpty()) return ClassificationResult(label = "N/A", confidence = 0f, scores = outputArray, top3Indices = emptyList())
+        val indices = outputArray.indices.toList()
+        val top3 = indices.sortedByDescending { outputArray[it] }.take(3)
+        val maxIndex = top3.first()
         val maxValue = outputArray[maxIndex]
         val labelStr = ModelLabels.MNIST_LABELS.getOrNull(maxIndex) ?: maxIndex.toString()
         val label = "Predicted: $labelStr"
-        return ClassificationResult(label = label, confidence = maxValue)
+        return ClassificationResult(label = label, confidence = maxValue, scores = outputArray, top3Indices = top3)
     }
 
     private fun loadModelFile(context: Context, modelPath: String): MappedByteBuffer {

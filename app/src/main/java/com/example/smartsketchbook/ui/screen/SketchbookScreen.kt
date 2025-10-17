@@ -36,6 +36,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.asAndroidPath
@@ -70,6 +72,7 @@ fun SketchbookScreen(
     val isClassifying by viewModel.isClassifying.collectAsState()
     val cpuThreads by viewModel.cpuThreadCount.collectAsState()
     val strokeWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
+    val haptics = LocalHapticFeedback.current
     Column(modifier = modifier.padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
@@ -113,6 +116,7 @@ fun SketchbookScreen(
                 text = "${it.label} (Confidence: $percent)",
                 modifier = Modifier.padding(top = 8.dp)
             )
+            ConfidenceBarDisplay(scores = it.scores, topIndex = it.top3Indices.firstOrNull() ?: 0)
         }
         Box(
             modifier = Modifier
@@ -167,6 +171,11 @@ fun SketchbookScreen(
                     } ?: bmp
                     viewModel.onBitmapCaptured(finalBitmap)
                 }
+            }
+        }
+        LaunchedEffect(result) {
+            if (result != null) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             }
         }
     }
