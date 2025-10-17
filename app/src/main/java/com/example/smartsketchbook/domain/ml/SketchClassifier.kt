@@ -15,6 +15,8 @@ import java.nio.FloatBuffer
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 import org.tensorflow.lite.Delegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
+import android.os.Build
 
 /**
  * Loads a TensorFlow Lite model from assets and provides a minimal inference API.
@@ -27,38 +29,101 @@ class SketchClassifier @Inject constructor(
     data class InputSpec(val inputWidth: Int, val inputHeight: Int, val inputChannels: Int)
     fun modelInputSpec(): InputSpec = InputSpec(config.inputWidth, config.inputHeight, config.inputChannels)
 
+    private var nnApiDelegate: Delegate? = null
     private var gpuDelegate: Delegate? = null
     private val interpreter: Interpreter by lazy {
         val options = Interpreter.Options().apply {
             // Tune as needed
             setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
         }
-        // Try GPU delegate via reflection to avoid hard dependency crashes
-        try {
-            val compatClazz = Class.forName("org.tensorflow.lite.gpu.CompatibilityList")
-            val compat = compatClazz.getConstructor().newInstance()
-            val isSupported = compatClazz.getMethod("isDelegateSupportedOnThisDevice").invoke(compat) as Boolean
-            if (isSupported) {
-                val gdClazz = Class.forName("org.tensorflow.lite.gpu.GpuDelegate")
-                val delegate = gdClazz.getConstructor().newInstance() as Delegate
-                options.addDelegate(delegate)
-                gpuDelegate = delegate
-                Log.i("SketchClassifier", "GPU Delegate enabled.")
-            } else {
-                Log.i("SketchClassifier", "GPU Delegate not supported on this device. Using CPU.")
+        // Skip delegates on emulators to avoid known GL/NNAPI issues
+        val onEmulator = isProbablyEmulator()
+        // Try NNAPI first on Android 9+ (API 28)
+        var nnapiAdded = false
+        if (!onEmulator && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                val nn = NnApiDelegate()
+                options.addDelegate(nn)
+                nnApiDelegate = nn
+                nnapiAdded = true
+                Log.i("SketchClassifier", "NNAPI Delegate enabled.")
+            } catch (e: Exception) {
+                Log.e("SketchClassifier", "NNAPI Delegate failed, will try GPU.", e)
+                try { nnApiDelegate?.javaClass?.getMethod("close")?.invoke(nnApiDelegate) } catch (_: Exception) {}
+                nnApiDelegate = null
             }
-        } catch (t: Throwable) {
-            Log.e("SketchClassifier", "GPU Delegate unavailable, falling back to CPU.", t)
-            gpuDelegate = null
+        }
+        // If NNAPI not added, try GPU delegate via reflection to avoid hard dependency crashes
+        if (!nnapiAdded && !onEmulator) {
+            try {
+                val compatClazz = Class.forName("org.tensorflow.lite.gpu.CompatibilityList")
+                val compat = compatClazz.getConstructor().newInstance()
+                val isSupported = compatClazz.getMethod("isDelegateSupportedOnThisDevice").invoke(compat) as Boolean
+                if (isSupported) {
+                    val gdClazz = Class.forName("org.tensorflow.lite.gpu.GpuDelegate")
+                    val delegate = gdClazz.getConstructor().newInstance() as Delegate
+                    options.addDelegate(delegate)
+                    gpuDelegate = delegate
+                    Log.i("SketchClassifier", "GPU Delegate enabled.")
+                } else {
+                    Log.i("SketchClassifier", "GPU Delegate not supported on this device. Using CPU.")
+                }
+            } catch (t: Throwable) {
+                Log.e("SketchClassifier", "GPU Delegate unavailable, falling back to CPU.", t)
+                gpuDelegate = null
+            }
         }
         try {
             val interp = Interpreter(loadModelFile(context, config.modelFileName), options)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
             interp
-        } catch (e: Exception) {
-            Log.e("SketchClassifier", "Failed to load TFLite model: ${config.modelFileName}", e)
-            throw e
+        } catch (eFirst: Exception) {
+            Log.e("SketchClassifier", "Failed to init interpreter with current delegates. Trying fallbacks...", eFirst)
+            // Close any existing delegates
+            try { nnApiDelegate?.javaClass?.getMethod("close")?.invoke(nnApiDelegate) } catch (_: Exception) {}
+            try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
+            nnApiDelegate = null
+            gpuDelegate = null
+
+            // Try GPU-only
+            val gpuOptions = Interpreter.Options().apply {
+                setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
+            }
+            try {
+                val compatClazz = Class.forName("org.tensorflow.lite.gpu.CompatibilityList")
+                val compat = compatClazz.getConstructor().newInstance()
+                val isSupported = compatClazz.getMethod("isDelegateSupportedOnThisDevice").invoke(compat) as Boolean
+                if (isSupported) {
+                    val gdClazz = Class.forName("org.tensorflow.lite.gpu.GpuDelegate")
+                    val delegate = gdClazz.getConstructor().newInstance() as Delegate
+                    gpuOptions.addDelegate(delegate)
+                    gpuDelegate = delegate
+                    Log.i("SketchClassifier", "GPU fallback enabled.")
+                }
+            } catch (t: Throwable) {
+                Log.e("SketchClassifier", "GPU fallback unavailable; will try CPU.", t)
+                gpuDelegate = null
+            }
+            try {
+                val interp = Interpreter(loadModelFile(context, config.modelFileName), gpuOptions)
+                val inputDt = interp.getInputTensor(0).dataType()
+                Log.i("SketchClassifier", "Input DataType (GPU fallback): $inputDt")
+                return@lazy interp
+            } catch (eGpu: Exception) {
+                Log.e("SketchClassifier", "GPU fallback failed; trying CPU.", eGpu)
+                try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
+                gpuDelegate = null
+            }
+
+            // CPU-only
+            val cpuOptions = Interpreter.Options().apply {
+                setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
+            }
+            val interp = Interpreter(loadModelFile(context, config.modelFileName), cpuOptions)
+            val inputDt = interp.getInputTensor(0).dataType()
+            Log.i("SketchClassifier", "Input DataType (CPU): $inputDt")
+            interp
         }
     }
 
@@ -82,8 +147,10 @@ class SketchClassifier @Inject constructor(
     }
 
     fun close() {
-        interpreter.close()
+        // Close delegates before interpreter
+        try { nnApiDelegate?.javaClass?.getMethod("close")?.invoke(nnApiDelegate) } catch (_: Exception) {}
         try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
+        interpreter.close()
     }
 
     fun processOutput(outputArray: FloatArray): ClassificationResult {
@@ -262,6 +329,14 @@ class SketchClassifier @Inject constructor(
     }
 
     private companion object {}
+
+    private fun isProbablyEmulator(): Boolean {
+        return (Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.lowercase().contains("vbox")
+                || Build.FINGERPRINT.lowercase().contains("test-keys")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86"))
+    }
 }
 
 
