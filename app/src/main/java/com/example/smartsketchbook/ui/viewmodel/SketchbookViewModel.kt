@@ -66,6 +66,7 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
             _paths.value = emptyList()
             _currentPath.value = null
             activePath.value = null
+            _classifiedBitmap.value = null
         }
     }
 
