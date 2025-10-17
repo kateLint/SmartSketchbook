@@ -70,17 +70,32 @@ class SketchbookViewModel @Inject constructor(
     val currentDrawingColor: MutableStateFlow<Color> = MutableStateFlow(Color.Black)
     fun setDrawingColor(color: Color) { currentDrawingColor.value = color }
 
+    // A/B test: stroke width variant
+    val isStrokeWidthVariantA: MutableStateFlow<Boolean> = MutableStateFlow(kotlin.random.Random.Default.nextBoolean())
+
     // CPU thread count control
     val cpuThreadCount: MutableStateFlow<Int> = MutableStateFlow(classifier.defaultCpuThreads())
     fun setCpuThreads(threads: Int) { cpuThreadCount.value = threads }
+
+    // Hardware delegate status
+    private val _hardwareDelegateStatus: MutableStateFlow<String> = MutableStateFlow("Initializing")
+    val hardwareDelegateStatus: StateFlow<String> = _hardwareDelegateStatus
+
+    // One-shot user messages (snackbar)
+    val userMessages: MutableSharedFlow<String> = MutableSharedFlow(extraBufferCapacity = 1)
+
+    // First-use tip
+    val showInitialTip: MutableStateFlow<Boolean> = MutableStateFlow(true)
 
     init {
         // Reinitialize interpreter when CPU thread count changes
         viewModelScope.launch {
             cpuThreadCount.collect { t ->
                 classifier.reinitializeForCpuThreads(t)
+                _hardwareDelegateStatus.value = classifier.getDelegateStatus()
             }
         }
+        _hardwareDelegateStatus.value = classifier.getDelegateStatus()
     }
 
     // Track previous touch point for path smoothing
@@ -214,6 +229,14 @@ class SketchbookViewModel @Inject constructor(
                 val result = classifier.processOutput(logits)
                 _classificationResult.value = result
                 updateStatus("${result.label} (${String.format("%.2f%%", result.confidence * 100f)})")
+                if (showInitialTip.value) showInitialTip.value = false
+                if (result.confidence < 0.60f) {
+                    userMessages.tryEmit("Warning: Low Confidence. Please draw clearer.")
+                }
+                android.util.Log.d(
+                    "Analytics",
+                    "User in Variant ${if (isStrokeWidthVariantA.value) "A (Thick)" else "B (Medium)"} - Prediction: ${result.label}"
+                )
             } catch (t: Throwable) {
                 val msg = t.message ?: t.javaClass.simpleName
                 updateStatus("Classification failed: $msg")

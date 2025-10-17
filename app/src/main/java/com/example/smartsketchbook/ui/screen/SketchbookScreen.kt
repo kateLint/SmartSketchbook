@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.border
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.Slider
@@ -70,10 +73,13 @@ fun SketchbookScreen(
     val classified by viewModel.classifiedBitmap.collectAsState()
     val result by viewModel.classificationResult.collectAsState()
     val isClassifying by viewModel.isClassifying.collectAsState()
-    val cpuThreads by viewModel.cpuThreadCount.collectAsState()
     val strokeWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
     val haptics = LocalHapticFeedback.current
-    Column(modifier = modifier.padding(16.dp)) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { innerPadding ->
+    Column(modifier = modifier.padding(innerPadding).padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
             Spacer(modifier = Modifier.width(12.dp))
@@ -93,22 +99,7 @@ fun SketchbookScreen(
             }
         }
 
-        // CPU Threads control (1..8 mapped from slider 0f..1f)
-        val sliderValue = remember(cpuThreads) { mutableStateOf((cpuThreads - 1) / 7f) }
-        Row(modifier = Modifier.padding(top = 8.dp)) {
-            Text("CPU Threads: $cpuThreads", modifier = Modifier.align(Alignment.CenterVertically))
-            Spacer(modifier = Modifier.width(12.dp))
-            Slider(
-                value = sliderValue.value,
-                onValueChange = {
-                    sliderValue.value = it
-                    val threads = 1 + (it * 7f).toInt().coerceIn(0, 7)
-                    viewModel.setCpuThreads(threads)
-                },
-                modifier = Modifier.width(200.dp),
-                colors = SliderDefaults.colors()
-            )
-        }
+        // Settings moved to Settings screen
 
         result?.let {
             val percent = String.format("%.1f%%", (it.confidence * 100f))
@@ -178,6 +169,12 @@ fun SketchbookScreen(
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             }
         }
+        LaunchedEffect(Unit) {
+            viewModel.userMessages.collect { msg ->
+                snackbarHostState.showSnackbar(message = msg)
+            }
+        }
+    }
     }
 }
 

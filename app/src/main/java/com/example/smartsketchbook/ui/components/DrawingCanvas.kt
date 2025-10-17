@@ -51,7 +51,9 @@ fun DrawingCanvas(
     val activePath by viewModel.activePath.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val strokeWidthPx = with(LocalDensity.current) { strokeWidthDp.toPx() }
+    val isVariantA by viewModel.isStrokeWidthVariantA.collectAsState()
+    val abStrokeDp = if (isVariantA) 16.dp else 8.dp
+    val strokeWidthPx = with(LocalDensity.current) { abStrokeDp.toPx() }
 
     val androidPaint = remember(strokeWidthPx, strokeColor) {
         Paint().apply {
