@@ -20,7 +20,8 @@ import java.nio.channels.FileChannel
  */
 @Singleton
 class SketchClassifier @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val config: ModelConfig
 ) {
 
     private val interpreter: Interpreter by lazy {
@@ -29,12 +30,12 @@ class SketchClassifier @Inject constructor(
             setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
             // XNNPACK/NNAPI may be enabled by default depending on TF Lite version
         }
-        Interpreter(loadModelFile(context, MODEL_ASSET_PATH), options)
+        Interpreter(loadModelFile(context, config.modelFileName), options)
     }
 
     // Pre-allocated reusable buffers and bitmaps
-    private val targetSize: Int = 28
-    private val reusableInputBitmap: Bitmap = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+    private val targetSize: Int = config.inputWidth // assume square or use both dims
+    private val reusableInputBitmap: Bitmap = Bitmap.createBitmap(config.inputWidth, config.inputHeight, Bitmap.Config.ARGB_8888)
     private var inputFloatBuffer: FloatBuffer? = null
     private var outputArray: FloatArray? = null
 
@@ -77,9 +78,9 @@ class SketchClassifier @Inject constructor(
         val inputTensor = interpreter.getInputTensor(0)
         val inShape = inputTensor.shape() // e.g., [1, height, width, channels]
         val inType = inputTensor.dataType()
-        val inHeight = if (inShape.size >= 2) inShape[1] else bitmap.height
-        val inWidth = if (inShape.size >= 3) inShape[2] else bitmap.width
-        val inChannels = if (inShape.size >= 4) inShape[3] else 1
+        val inHeight = if (inShape.size >= 2) inShape[1] else config.inputHeight
+        val inWidth = if (inShape.size >= 3) inShape[2] else config.inputWidth
+        val inChannels = if (inShape.size >= 4) inShape[3] else config.inputChannels
 
         // Prepare input bitmap at expected size using reusable target when matches classifier target
         val inputBitmap = if (inWidth == targetSize && inHeight == targetSize) {
@@ -191,9 +192,7 @@ class SketchClassifier @Inject constructor(
         return result
     }
 
-    private companion object {
-        const val MODEL_ASSET_PATH: String = "model.tflite"
-    }
+    private companion object {}
 }
 
 
