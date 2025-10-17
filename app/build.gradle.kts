@@ -44,9 +44,13 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // Do not compress TFLite models to allow mmap
-            noCompress += listOf(".tflite")
         }
+    }
+
+    // Do not compress TFLite models to allow mmap
+    androidResources {
+        noCompress.add("tflite")
+        noCompress.add("lite")
     }
 
 }

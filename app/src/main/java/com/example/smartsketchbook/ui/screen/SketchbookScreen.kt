@@ -29,6 +29,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.smartsketchbook.ui.components.DrawingCanvas
 import com.example.smartsketchbook.ui.state.SketchbookUiState
@@ -102,12 +105,13 @@ fun SketchbookScreen(
 @Composable
 private fun CapturableDrawing(
     viewModel: SketchbookViewModel,
-    strokeWidth: Float = 24f,
+    strokeWidthDp: Dp = 12.dp,
     strokeColor: Color = Color.Black,
     backgroundColor: Color = Color.White
 ) {
     val paths by viewModel.paths.collectAsState()
     val activePath by viewModel.activePath.collectAsState()
+    val strokeWidthPx = with(LocalDensity.current) { strokeWidthDp.toPx() }
 
     androidx.compose.foundation.Canvas(
         modifier = Modifier
@@ -125,20 +129,14 @@ private fun CapturableDrawing(
                 style = Paint.Style.STROKE
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
-                this.strokeWidth = strokeWidth
+                this.strokeWidth = strokeWidthPx
             }
             paths.forEach { path ->
                 nativeCanvas.drawPath(path, androidPaint)
             }
-            activePath?.points?.takeIf { it.isNotEmpty() }?.let { points ->
-                val tempPath = Path()
-                val first = points.first()
-                tempPath.moveTo(first.x, first.y)
-                for (i in 1 until points.size) {
-                    val p = points[i]
-                    tempPath.lineTo(p.x, p.y)
-                }
-                nativeCanvas.drawPath(tempPath, androidPaint)
+            activePath?.path?.let { composePath ->
+                val androidPath = composePath.asAndroidPath()
+                nativeCanvas.drawPath(androidPath, androidPaint)
             }
         }
     }

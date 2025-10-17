@@ -1,12 +1,12 @@
 package com.example.smartsketchbook.ui.state
 
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
 
 /**
- * Represents a stroke as an ordered list of points.
+ * Represents a stroke as a Compose Path to avoid rebuilding per frame.
  */
 data class DrawingPath(
-    val points: List<Offset> = emptyList()
+    val path: Path = Path()
 )
 
 

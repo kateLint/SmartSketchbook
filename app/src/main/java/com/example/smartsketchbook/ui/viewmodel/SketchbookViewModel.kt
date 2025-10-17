@@ -15,6 +15,8 @@ import com.example.smartsketchbook.utils.BitmapConverter
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import com.example.smartsketchbook.domain.ml.BitmapPreprocessor
+import androidx.compose.ui.graphics.Path as ComposePath
+import androidx.compose.ui.geometry.Offset
 
 /**
  * ViewModel for the sketchbook screen, responsible for UI-related data and state.
@@ -49,6 +51,9 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
     private val _classifiedBitmap: MutableStateFlow<Bitmap?> = MutableStateFlow(null)
     val classifiedBitmap: StateFlow<Bitmap?> = _classifiedBitmap
 
+    // Track previous touch point for path smoothing
+    private var lastPoint: Offset? = null
+
     // Motion actions to drive stroke creation from UI
     sealed class MotionAction {
         object Start : MotionAction()
@@ -79,17 +84,29 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
     }
 
     fun startStroke(x: Float, y: Float) {
-        val path = AndroidPath()
-        path.moveTo(x, y)
-        _currentPath.value = path
-        activePath.value = DrawingPath(points = listOf(androidx.compose.ui.geometry.Offset(x, y)))
+        val androidPath = AndroidPath()
+        androidPath.moveTo(x, y)
+        _currentPath.value = androidPath
+
+        val composePath = ComposePath().apply { moveTo(x, y) }
+        activePath.value = DrawingPath(path = composePath)
+        lastPoint = Offset(x, y)
     }
 
     fun addPoint(x: Float, y: Float) {
-        _currentPath.value?.lineTo(x, y)
-        activePath.value = activePath.value?.let { current ->
-            current.copy(points = current.points + androidx.compose.ui.geometry.Offset(x, y))
+        val previous = lastPoint ?: Offset(x, y)
+        val current = Offset(x, y)
+        val mid = Offset((previous.x + current.x) / 2f, (previous.y + current.y) / 2f)
+
+        // Smooth segment with quadratic Bezier (control=previous, end=mid)
+        _currentPath.value?.quadTo(previous.x, previous.y, mid.x, mid.y)
+
+        val newPath = ComposePath().apply {
+            activePath.value?.path?.let { existing -> addPath(existing) }
+            quadraticBezierTo(previous.x, previous.y, mid.x, mid.y)
         }
+        activePath.value = DrawingPath(path = newPath)
+        lastPoint = current
     }
 
     fun endStroke() {
@@ -98,22 +115,33 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
         }
         _currentPath.value = null
         activePath.value = null
+        lastPoint = null
     }
 
     // Unified motion handler called by UI
     fun handleMotionEvent(offset: androidx.compose.ui.geometry.Offset, action: MotionAction) {
         when (action) {
             is MotionAction.Start -> {
-                val path = AndroidPath()
-                path.moveTo(offset.x, offset.y)
-                _currentPath.value = path
-                activePath.value = DrawingPath(points = listOf(offset))
+                val androidPath = AndroidPath().apply { moveTo(offset.x, offset.y) }
+                _currentPath.value = androidPath
+
+                val composePath = ComposePath().apply { moveTo(offset.x, offset.y) }
+                activePath.value = DrawingPath(path = composePath)
+                lastPoint = Offset(offset.x, offset.y)
             }
             is MotionAction.Move -> {
-                _currentPath.value?.lineTo(offset.x, offset.y)
-                activePath.value = activePath.value?.let { current ->
-                    current.copy(points = current.points + offset)
-                } ?: DrawingPath(points = listOf(offset))
+                val previous = lastPoint ?: Offset(offset.x, offset.y)
+                val current = Offset(offset.x, offset.y)
+                val mid = Offset((previous.x + current.x) / 2f, (previous.y + current.y) / 2f)
+
+                _currentPath.value?.quadTo(previous.x, previous.y, mid.x, mid.y)
+
+                val newPath = ComposePath().apply {
+                    activePath.value?.path?.let { existing -> addPath(existing) }
+                    quadraticBezierTo(previous.x, previous.y, mid.x, mid.y)
+                }
+                activePath.value = DrawingPath(path = newPath)
+                lastPoint = current
             }
             is MotionAction.End -> {
                 _currentPath.value?.let { finished ->
@@ -121,6 +149,7 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
                 }
                 _currentPath.value = null
                 activePath.value = null
+                lastPoint = null
             }
         }
     }

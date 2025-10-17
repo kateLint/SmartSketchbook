@@ -34,13 +34,16 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.smartsketchbook.ui.viewmodel.SketchbookViewModel
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.asAndroidPath
 
 @Composable
 fun DrawingCanvas(
     onDrawFinished: (Bitmap) -> Unit,
     viewModel: SketchbookViewModel,
     modifier: Modifier = Modifier,
-    strokeWidth: Float = 24f,
+    strokeWidthDp: Dp = 12.dp,
     strokeColor: Color = Color.Black,
     backgroundColor: Color = Color.White
 ) {
@@ -48,25 +51,27 @@ fun DrawingCanvas(
     val activePath by viewModel.activePath.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val androidPaint = remember(strokeWidth, strokeColor) {
+    val strokeWidthPx = with(LocalDensity.current) { strokeWidthDp.toPx() }
+
+    val androidPaint = remember(strokeWidthPx, strokeColor) {
         Paint().apply {
             isAntiAlias = true
             color = strokeColor.toArgb()
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
-            this.strokeWidth = strokeWidth
+            this.strokeWidth = strokeWidthPx
         }
     }
 
-    val activeStrokePaint = remember(strokeWidth, strokeColor) {
+    val activeStrokePaint = remember(strokeWidthPx, strokeColor) {
         Paint().apply {
             isAntiAlias = true
             color = strokeColor.toArgb()
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
-            this.strokeWidth = strokeWidth * 1.15f
+            this.strokeWidth = strokeWidthPx * 1.15f
         }
     }
 
@@ -120,7 +125,7 @@ fun DrawingCanvas(
                                 viewModel.exportBitmap(
                                     canvasWidth = canvasSize.width,
                                     canvasHeight = canvasSize.height,
-                                    strokeWidth = strokeWidth,
+                                    strokeWidth = strokeWidthPx,
                                     onExported = onDrawFinished
                                 )
                             }
@@ -144,15 +149,10 @@ fun DrawingCanvas(
                 paths.forEach { path ->
                     nativeCanvas.drawPath(path, androidPaint)
                 }
-                activePath?.points?.takeIf { it.isNotEmpty() }?.let { points ->
-                    val tempPath = Path()
-                    val first = points.first()
-                    tempPath.moveTo(first.x, first.y)
-                    for (i in 1 until points.size) {
-                        val p = points[i]
-                        tempPath.lineTo(p.x, p.y)
-                    }
-                    nativeCanvas.drawPath(tempPath, activeStrokePaint)
+                activePath?.path?.let { composePath ->
+                    // Convert Compose Path to Android Path for consistent rendering
+                    val androidPath = composePath.asAndroidPath()
+                    nativeCanvas.drawPath(androidPath, activeStrokePaint)
                 }
             }
         }
@@ -176,7 +176,7 @@ fun DrawingCanvas(
                     viewModel.exportBitmap(
                         canvasWidth = canvasSize.width,
                         canvasHeight = canvasSize.height,
-                        strokeWidth = strokeWidth,
+                        strokeWidth = strokeWidthPx,
                         onExported = onDrawFinished
                     )
                 }
@@ -190,7 +190,7 @@ fun DrawingCanvas(
                     viewModel.exportBitmap(
                         canvasWidth = canvasSize.width,
                         canvasHeight = canvasSize.height,
-                        strokeWidth = strokeWidth,
+                        strokeWidth = strokeWidthPx,
                         onExported = onDrawFinished
                     )
                 }
