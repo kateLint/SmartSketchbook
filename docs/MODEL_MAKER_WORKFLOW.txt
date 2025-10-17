@@ -1,0 +1,41 @@
+A) Setup
+# Create a fresh Python env and install TFLite Model Maker
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip
+pip install tflite-model-maker tensorflow==2.13.*
+
+B) Data Loading
+# Directory structure (example):
+# dataset/
+#   Circle/
+#     circle_001.jpg ...
+#   Square/
+#     square_001.jpg ...
+#   Triangle/
+#     triangle_001.jpg ...
+
+from tflite_model_maker import image_classifier
+from tflite_model_maker.image_classifier import DataLoader
+
+# Load data
+train_data = DataLoader.from_folder('dataset')
+# Optionally split
+'train_data, test_data = train_data.split(0.8)
+
+C) Model Training
+# Choose a base (MobileNetV2 / EfficientNet-Lite)
+model = image_classifier.create(
+    train_data,
+    model_spec=image_classifier.ModelSpec.get('mobilenet_v2'),
+    epochs=10,
+    batch_size=32,
+)
+
+# Evaluate
+loss, acc = model.evaluate(test_data)
+print('Test accuracy:', acc)
+
+D) Model Export
+# Export quantized TFLite for mobile (size/speed win)
+model.export(export_dir='export', tflite_filename='shapes_classifier.tflite', quantization_config=image_classifier.QuantizationConfig.for_int8())
+# Saved model + labels will be in 'export/'

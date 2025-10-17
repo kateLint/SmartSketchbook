@@ -139,9 +139,9 @@ class SketchbookViewModel @Inject constructor(
         // Reinitialize classifier with new config (assume 28x28x1 for both simulated models)
         val newCfg = com.example.smartsketchbook.domain.ml.ModelConfig(
             modelFileName = pathOrAsset,
-            inputWidth = 28,
-            inputHeight = 28,
-            inputChannels = 1
+            inputWidth = model.inputWidth,
+            inputHeight = model.inputHeight,
+            inputChannels = model.inputChannels
         )
         classifier.loadModel(newCfg, model)
         // Update labels source for processOutput by adjusting ModelLabels if needed

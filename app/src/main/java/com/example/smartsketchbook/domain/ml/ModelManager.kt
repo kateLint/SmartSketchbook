@@ -53,6 +53,8 @@ class ModelManager @Inject constructor(
                 output.flush()
             }
         }
+        // TODO(Security): Verify integrity of outFile here.
+        // Compute MD5/SHA-256 and compare with a trusted server-provided hash before accepting.
         outFile
     }
 }

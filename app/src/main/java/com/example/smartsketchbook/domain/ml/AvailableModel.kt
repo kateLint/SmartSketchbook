@@ -9,7 +9,10 @@ data class AvailableModel(
     val labels: List<String>,
     val source: ModelSource = ModelSource.ASSET,
     val version: Int,
-    val downloadUrl: String? = null
+    val downloadUrl: String? = null,
+    val inputWidth: Int,
+    val inputHeight: Int,
+    val inputChannels: Int
 )
 
 object AvailableModels {
@@ -19,7 +22,10 @@ object AvailableModels {
         fileName = "mnist.tflite",
         labels = com.example.smartsketchbook.domain.ml.ModelLabels.MNIST_LABELS,
         source = ModelSource.ASSET,
-        version = 1
+        version = 1,
+        inputWidth = 28,
+        inputHeight = 28,
+        inputChannels = 1
     )
 
     val Letters = AvailableModel(
@@ -28,7 +34,22 @@ object AvailableModels {
         fileName = "letters_placeholder.tflite",
         labels = ('A'..'Z').map { it.toString() },
         source = ModelSource.ASSET,
-        version = 2
+        version = 2,
+        inputWidth = 28,
+        inputHeight = 28,
+        inputChannels = 1
+    )
+
+    val BasicShapes = AvailableModel(
+        id = "shapes",
+        name = "Basic Shapes",
+        fileName = "shapes_classifier.tflite",
+        labels = listOf("Circle", "Square", "Triangle"),
+        source = ModelSource.ASSET,
+        version = 1,
+        inputWidth = 96,
+        inputHeight = 96,
+        inputChannels = 3
     )
 
     val DigitsDownloaded = AvailableModel(
@@ -38,10 +59,13 @@ object AvailableModels {
         labels = com.example.smartsketchbook.domain.ml.ModelLabels.MNIST_LABELS,
         source = ModelSource.DOWNLOADED,
         version = 1,
-        downloadUrl = "https://example.com/models/mnist.tflite"
+        downloadUrl = "https://example.com/models/mnist.tflite",
+        inputWidth = 28,
+        inputHeight = 28,
+        inputChannels = 1
     )
 
-    val All: List<AvailableModel> = listOf(Digits, Letters, DigitsDownloaded)
+    val All: List<AvailableModel> = listOf(Digits, Letters, BasicShapes, DigitsDownloaded)
 }
 
 
