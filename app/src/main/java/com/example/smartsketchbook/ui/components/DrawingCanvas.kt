@@ -37,6 +37,7 @@ import com.example.smartsketchbook.ui.viewmodel.SketchbookViewModel
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.platform.testTag
 
 @Composable
 fun DrawingCanvas(
@@ -86,6 +87,7 @@ fun DrawingCanvas(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("DrawingCanvas")
                 .pointerInput(viewModel) {
                     detectDragGestures(
                         onDragStart = { start: Offset ->
