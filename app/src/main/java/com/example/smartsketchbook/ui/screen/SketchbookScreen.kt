@@ -51,7 +51,7 @@ fun SketchbookScreen(
 ) {
     val viewModel: SketchbookViewModel = hiltViewModel()
     val context = LocalContext.current
-    var captureSize = remember { mutableStateOf(IntSize.Zero) }
+    val captureSize = remember { mutableStateOf(IntSize.Zero) }
     Column(modifier = modifier.padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
