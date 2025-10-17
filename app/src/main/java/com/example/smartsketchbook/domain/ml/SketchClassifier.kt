@@ -14,6 +14,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import org.tensorflow.lite.Delegate
 
 /**
  * Loads a TensorFlow Lite model from assets and provides a minimal inference API.
@@ -24,15 +25,32 @@ class SketchClassifier @Inject constructor(
     private val config: ModelConfig
 ) {
 
+    private var gpuDelegate: Delegate? = null
     private val interpreter: Interpreter by lazy {
         val options = Interpreter.Options().apply {
             // Tune as needed
             setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-            // XNNPACK/NNAPI may be enabled by default depending on TF Lite version
+        }
+        // Try GPU delegate via reflection to avoid hard dependency crashes
+        try {
+            val compatClazz = Class.forName("org.tensorflow.lite.gpu.CompatibilityList")
+            val compat = compatClazz.getConstructor().newInstance()
+            val isSupported = compatClazz.getMethod("isDelegateSupportedOnThisDevice").invoke(compat) as Boolean
+            if (isSupported) {
+                val gdClazz = Class.forName("org.tensorflow.lite.gpu.GpuDelegate")
+                val delegate = gdClazz.getConstructor().newInstance() as Delegate
+                options.addDelegate(delegate)
+                gpuDelegate = delegate
+                Log.i("SketchClassifier", "GPU Delegate enabled.")
+            } else {
+                Log.i("SketchClassifier", "GPU Delegate not supported on this device. Using CPU.")
+            }
+        } catch (t: Throwable) {
+            Log.e("SketchClassifier", "GPU Delegate unavailable, falling back to CPU.", t)
+            gpuDelegate = null
         }
         try {
             val interp = Interpreter(loadModelFile(context, config.modelFileName), options)
-            // Log discovered input data type for Day 17
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType: $inputDt, model=${config.modelFileName}")
             interp
@@ -63,6 +81,7 @@ class SketchClassifier @Inject constructor(
 
     fun close() {
         interpreter.close()
+        try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
     }
 
     fun processOutput(outputArray: FloatArray): ClassificationResult {
@@ -192,14 +211,20 @@ class SketchClassifier @Inject constructor(
                         outputArray2D = Array(1) { FloatArray(numClasses) }
                     }
                     val out2D = outputArray2D!!
+                    val t0 = System.nanoTime()
                     interpreter.run(inputBuffer, out2D)
+                    val dtMs = (System.nanoTime() - t0) / 1_000_000.0
+                    Log.d("SketchClassifier", "Inference time: ${dtMs}ms")
                     return out2D[0]
                 } else if (rank == 1) {
                     if (outputArray == null || outputArray!!.size != numClasses) {
                         outputArray = FloatArray(numClasses)
                     }
                     val out = outputArray!!
+                    val t0 = System.nanoTime()
                     interpreter.run(inputBuffer, out)
+                    val dtMs = (System.nanoTime() - t0) / 1_000_000.0
+                    Log.d("SketchClassifier", "Inference time: ${dtMs}ms")
                     return out
                 }
             }
