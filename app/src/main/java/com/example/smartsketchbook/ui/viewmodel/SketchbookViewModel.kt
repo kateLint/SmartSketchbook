@@ -192,14 +192,15 @@ class SketchbookViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val (preprocessed, logits) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                    val prep = BitmapPreprocessor.preprocessBitmap(captured, targetSize = 28)
+                    val targetSize = classifier.modelInputSpec().inputWidth
+                    val prep = BitmapPreprocessor.preprocessBitmap(captured, targetSize = targetSize)
                     val out = classifier.classify(prep)
                     prep to out
                 }
                 _classifiedBitmap.value = preprocessed
                 val result = classifier.processOutput(logits)
                 _classificationResult.value = result
-                updateStatus("${result.label} (${String.format("%.1f%%", result.confidence * 100f)})")
+                updateStatus("${result.label} (${String.format("%.2f%%", result.confidence * 100f)})")
             } catch (t: Throwable) {
                 val msg = t.message ?: t.javaClass.simpleName
                 updateStatus("Classification failed: $msg")

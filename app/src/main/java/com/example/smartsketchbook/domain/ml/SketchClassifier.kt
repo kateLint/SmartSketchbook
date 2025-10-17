@@ -24,6 +24,8 @@ class SketchClassifier @Inject constructor(
     @ApplicationContext private val context: Context,
     private val config: ModelConfig
 ) {
+    data class InputSpec(val inputWidth: Int, val inputHeight: Int, val inputChannels: Int)
+    fun modelInputSpec(): InputSpec = InputSpec(config.inputWidth, config.inputHeight, config.inputChannels)
 
     private var gpuDelegate: Delegate? = null
     private val interpreter: Interpreter by lazy {
