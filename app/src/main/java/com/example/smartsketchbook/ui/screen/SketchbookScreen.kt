@@ -61,6 +61,7 @@ fun SketchbookScreen(
     val context = LocalContext.current
     val captureSize = remember { mutableStateOf(IntSize.Zero) }
     val classified by viewModel.classifiedBitmap.collectAsState()
+    val result by viewModel.classificationResult.collectAsState()
     Column(modifier = modifier.padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
@@ -79,6 +80,14 @@ fun SketchbookScreen(
                         .padding(2.dp)
                 )
             }
+        }
+
+        result?.let {
+            val percent = String.format("%.1f%%", (it.confidence * 100f))
+            Text(
+                text = "${it.label} (Confidence: $percent)",
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
         Box(
             modifier = Modifier

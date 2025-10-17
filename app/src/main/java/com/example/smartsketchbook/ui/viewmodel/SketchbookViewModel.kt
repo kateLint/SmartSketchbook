@@ -16,6 +16,8 @@ import com.example.smartsketchbook.utils.BitmapConverter
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import com.example.smartsketchbook.domain.ml.BitmapPreprocessor
+import com.example.smartsketchbook.domain.ml.SketchClassifier
+import com.example.smartsketchbook.domain.ml.ClassificationResult
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.geometry.Offset
 
@@ -26,7 +28,9 @@ import androidx.compose.ui.geometry.Offset
  * and allow the injection of dependencies (if any) via the @Inject constructor.
  */
 @HiltViewModel
-class SketchbookViewModel @Inject constructor() : ViewModel() {
+class SketchbookViewModel @Inject constructor(
+    private val classifier: SketchClassifier
+) : ViewModel() {
 
     // Holds all UI-related state for the Sketchbook screen.
     private val _uiState: MutableStateFlow<SketchbookUiState> = MutableStateFlow(SketchbookUiState())
@@ -51,6 +55,9 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
     // For debugging/previewing the preprocessed bitmap
     private val _classifiedBitmap: MutableStateFlow<Bitmap?> = MutableStateFlow(null)
     val classifiedBitmap: StateFlow<Bitmap?> = _classifiedBitmap
+
+    private val _classificationResult: MutableStateFlow<ClassificationResult?> = MutableStateFlow(null)
+    val classificationResult: StateFlow<ClassificationResult?> = _classificationResult
 
     // Track previous touch point for path smoothing
     private var lastPoint: Offset? = null
@@ -170,6 +177,13 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
         viewModelScope.launch {
             val preprocessed = BitmapPreprocessor.preprocessBitmap(captured, targetSize = 28)
             _classifiedBitmap.value = preprocessed
+            // Run synchronous inference and post-process
+            runCatching {
+                val logits = classifier.classify(preprocessed)
+                val result = classifier.processOutput(logits)
+                _classificationResult.value = result
+                updateStatus("${'$'}{result.label} (${String.format("%.1f%%", result.confidence * 100f)})")
+            }
         }
     }
 

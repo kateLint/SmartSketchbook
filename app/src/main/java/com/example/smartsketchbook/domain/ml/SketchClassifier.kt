@@ -44,6 +44,14 @@ class SketchClassifier @Inject constructor(
         interpreter.close()
     }
 
+    fun processOutput(outputArray: FloatArray): ClassificationResult {
+        if (outputArray.isEmpty()) return ClassificationResult(label = "N/A", confidence = 0f)
+        val maxIndex = outputArray.indices.maxByOrNull { outputArray[it] } ?: 0
+        val maxValue = outputArray[maxIndex]
+        val label = "Predicted: $maxIndex"
+        return ClassificationResult(label = label, confidence = maxValue)
+    }
+
     private fun loadModelFile(context: Context, modelPath: String): MappedByteBuffer {
         val assetFileDescriptor = context.assets.openFd(modelPath)
         FileInputStream(assetFileDescriptor.fileDescriptor).use { inputStream ->
