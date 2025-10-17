@@ -47,7 +47,7 @@ fun DrawingCanvas(
     strokeColor: Color = Color.Black,
     backgroundColor: Color = Color.White
 ) {
-    val paths by viewModel.paths.collectAsState()
+    val paths by viewModel.renderedPaths.collectAsState()
     val activePath by viewModel.activePath.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
@@ -146,8 +146,9 @@ fun DrawingCanvas(
             // Draw paths using Android canvas for parity with bitmap rendering
             drawIntoCanvas { canvas ->
                 val nativeCanvas = canvas.nativeCanvas
-                paths.forEach { path ->
-                    nativeCanvas.drawPath(path, androidPaint)
+                paths.forEach { rendered ->
+                    val paint = androidPaint.apply { color = rendered.colorInt }
+                    nativeCanvas.drawPath(rendered.path, paint)
                 }
                 activePath?.path?.let { composePath ->
                     // Convert Compose Path to Android Path for consistent rendering

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.border
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -62,11 +64,12 @@ fun SketchbookScreen(
     val captureSize = remember { mutableStateOf(IntSize.Zero) }
     val classified by viewModel.classifiedBitmap.collectAsState()
     val result by viewModel.classificationResult.collectAsState()
+    val isClassifying by viewModel.isClassifying.collectAsState()
     Column(modifier = modifier.padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
             Spacer(modifier = Modifier.width(12.dp))
-            Button(onClick = { viewModel.onCaptureDrawing() }) { Text("Classify") }
+            Button(onClick = { viewModel.onCaptureDrawing() }, enabled = !isClassifying) { Text(if (isClassifying) "Classifying..." else "Classify") }
             Spacer(modifier = Modifier.width(12.dp))
             Text(text = "Sketchbook Status: ${state.statusMessage}")
             Spacer(modifier = Modifier.width(12.dp))
@@ -107,6 +110,13 @@ fun SketchbookScreen(
                     )
                 }
             )
+            if (isClassifying) {
+                Box(modifier = Modifier
+                    .matchParentSize()) {
+                    CircularProgressIndicator(modifier = Modifier
+                        .align(Alignment.Center))
+                }
+            }
         }
 
         LaunchedEffect(viewModel, captureSize.value) {
@@ -144,7 +154,7 @@ private fun CapturableDrawing(
     strokeColor: Color = Color.Black,
     backgroundColor: Color = Color.White
 ) {
-    val paths by viewModel.paths.collectAsState()
+    val renderedPaths by viewModel.renderedPaths.collectAsState()
     val activePath by viewModel.activePath.collectAsState()
     val strokeWidthPx = with(LocalDensity.current) { strokeWidthDp.toPx() }
 
@@ -166,8 +176,9 @@ private fun CapturableDrawing(
                 strokeJoin = Paint.Join.ROUND
                 this.strokeWidth = strokeWidthPx
             }
-            paths.forEach { path ->
-                nativeCanvas.drawPath(path, androidPaint)
+            renderedPaths.forEach { rendered ->
+                androidPaint.color = rendered.colorInt
+                nativeCanvas.drawPath(rendered.path, androidPaint)
             }
             activePath?.path?.let { composePath ->
                 val androidPath = composePath.asAndroidPath()

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.example.smartsketchbook.ui.state.SketchbookUiState
 import com.example.smartsketchbook.ui.state.DrawingPath
+import com.example.smartsketchbook.ui.state.RenderedPath
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -20,6 +21,8 @@ import com.example.smartsketchbook.domain.ml.SketchClassifier
 import com.example.smartsketchbook.domain.ml.ClassificationResult
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 
 /**
  * ViewModel for the sketchbook screen, responsible for UI-related data and state.
@@ -38,12 +41,13 @@ class SketchbookViewModel @Inject constructor(
     // Read-only state exposed to the UI.
     val uiState: StateFlow<SketchbookUiState> = _uiState
 
-    // Drawing state: list of finished paths and the in-progress path
-    private val _paths: MutableStateFlow<List<AndroidPath>> = MutableStateFlow(emptyList())
-    val paths: StateFlow<List<AndroidPath>> = _paths
+    // Drawing state: list of finished colored paths and the in-progress path
+    private val _renderedPaths: MutableStateFlow<List<RenderedPath>> = MutableStateFlow(emptyList())
+    val renderedPaths: StateFlow<List<RenderedPath>> = _renderedPaths
 
     private val _currentPath: MutableStateFlow<AndroidPath?> = MutableStateFlow(null)
     val currentPath: StateFlow<AndroidPath?> = _currentPath
+    private var currentPathColorInt: Int = Color.Black.toArgb()
 
     // New: activePath holds the points of the stroke currently being drawn
     val activePath: MutableStateFlow<DrawingPath?> = MutableStateFlow(null)
@@ -58,6 +62,13 @@ class SketchbookViewModel @Inject constructor(
 
     private val _classificationResult: MutableStateFlow<ClassificationResult?> = MutableStateFlow(null)
     val classificationResult: StateFlow<ClassificationResult?> = _classificationResult
+
+    // Loading state during classification
+    val isClassifying: MutableStateFlow<Boolean> = MutableStateFlow(false)
+
+    // Current drawing color
+    val currentDrawingColor: MutableStateFlow<Color> = MutableStateFlow(Color.Black)
+    fun setDrawingColor(color: Color) { currentDrawingColor.value = color }
 
     // Track previous touch point for path smoothing
     private var lastPoint: Offset? = null
@@ -76,17 +87,19 @@ class SketchbookViewModel @Inject constructor(
 
     fun clearCanvas() {
         viewModelScope.launch {
-            _paths.value = emptyList()
+            _renderedPaths.value = emptyList()
             _currentPath.value = null
             activePath.value = null
             _classifiedBitmap.value = null
+            _classificationResult.value = null
+            isClassifying.value = false
         }
     }
 
     fun undoLast() {
         viewModelScope.launch {
-            if (_paths.value.isNotEmpty()) {
-                _paths.value = _paths.value.dropLast(1)
+            if (_renderedPaths.value.isNotEmpty()) {
+                _renderedPaths.value = _renderedPaths.value.dropLast(1)
             }
         }
     }
@@ -98,6 +111,7 @@ class SketchbookViewModel @Inject constructor(
 
         val composePath = ComposePath().apply { moveTo(x, y) }
         activePath.value = DrawingPath(path = composePath)
+        currentPathColorInt = currentDrawingColor.value.toArgb()
         lastPoint = Offset(x, y)
     }
 
@@ -119,7 +133,7 @@ class SketchbookViewModel @Inject constructor(
 
     fun endStroke() {
         _currentPath.value?.let { finished ->
-            _paths.value = _paths.value + finished
+            _renderedPaths.value = _renderedPaths.value + RenderedPath(path = finished, colorInt = currentPathColorInt)
         }
         _currentPath.value = null
         activePath.value = null
@@ -153,7 +167,7 @@ class SketchbookViewModel @Inject constructor(
             }
             is MotionAction.End -> {
                 _currentPath.value?.let { finished ->
-                    _paths.value = _paths.value + finished
+                    _renderedPaths.value = _renderedPaths.value + RenderedPath(path = finished, colorInt = currentPathColorInt)
                 }
                 _currentPath.value = null
                 activePath.value = null
@@ -165,6 +179,7 @@ class SketchbookViewModel @Inject constructor(
     // Called when the user finishes drawing and wants to classify
     fun onCaptureDrawing() {
         viewModelScope.launch {
+            isClassifying.value = true
             // Clear in-progress stroke points
             activePath.value = null
             // Signal UI to capture the composable into a Bitmap
@@ -183,6 +198,10 @@ class SketchbookViewModel @Inject constructor(
                 val result = classifier.processOutput(logits)
                 _classificationResult.value = result
                 updateStatus("${'$'}{result.label} (${String.format("%.1f%%", result.confidence * 100f)})")
+            }.onFailure {
+                updateStatus("Classification failed")
+            }.also {
+                isClassifying.value = false
             }
         }
     }
@@ -196,7 +215,7 @@ class SketchbookViewModel @Inject constructor(
         val bitmap = BitmapConverter.toMonochrome28x28(
             width = canvasWidth,
             height = canvasHeight,
-            paths = _paths.value,
+            paths = _renderedPaths.value.map { it.path },
             currentPath = _currentPath.value,
             strokeWidth = strokeWidth
         )
@@ -205,7 +224,7 @@ class SketchbookViewModel @Inject constructor(
 
     fun getDrawingBounds(): RectF? {
         val allPaths = buildList {
-            addAll(_paths.value)
+            addAll(_renderedPaths.value.map { it.path })
             _currentPath.value?.let { add(it) }
         }
         if (allPaths.isEmpty()) return null
