@@ -33,10 +33,7 @@ class SketchClassifier @Inject constructor(
     private var nnApiDelegate: Delegate? = null
     private var gpuDelegate: Delegate? = null
     private val interpreter: Interpreter by lazy {
-        val options = Interpreter.Options().apply {
-            // Tune as needed
-            setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-        }
+        val options = Interpreter.Options()
         // Skip delegates on emulators to avoid known GL/NNAPI issues
         val onEmulator = isProbablyEmulator()
         // Try NNAPI first on Android 9+ (API 28)
@@ -121,9 +118,12 @@ class SketchClassifier @Inject constructor(
             }
 
             // CPU-only
-            val cpuOptions = Interpreter.Options().apply {
-                setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-            }
+            val cpuOptions = Interpreter.Options()
+            val numThreads = Runtime.getRuntime().availableProcessors()
+            val effectiveThreads = maxOf(1, minOf(4, numThreads))
+            cpuOptions.setNumThreads(effectiveThreads)
+            try { cpuOptions.setUseXNNPACK(true) } catch (_: Throwable) {}
+            Log.i("SketchClassifier", "Falling back to multi-threaded CPU ($effectiveThreads threads).")
             val interp = Interpreter(loadModelFile(context, config.modelFileName), cpuOptions)
             val inputDt = interp.getInputTensor(0).dataType()
             Log.i("SketchClassifier", "Input DataType (CPU): $inputDt")
