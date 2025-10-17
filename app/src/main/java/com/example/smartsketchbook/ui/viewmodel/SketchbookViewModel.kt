@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import javax.inject.Inject
 import android.graphics.Path as AndroidPath
 import android.graphics.Bitmap
+import android.graphics.RectF
 import com.example.smartsketchbook.utils.BitmapConverter
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -186,5 +187,30 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
             strokeWidth = strokeWidth
         )
         onExported(bitmap)
+    }
+
+    fun getDrawingBounds(): RectF? {
+        val allPaths = buildList {
+            addAll(_paths.value)
+            _currentPath.value?.let { add(it) }
+        }
+        if (allPaths.isEmpty()) return null
+
+        var minLeft = Float.POSITIVE_INFINITY
+        var minTop = Float.POSITIVE_INFINITY
+        var maxRight = Float.NEGATIVE_INFINITY
+        var maxBottom = Float.NEGATIVE_INFINITY
+
+        val tmp = RectF()
+        allPaths.forEach { p ->
+            p.computeBounds(tmp, true)
+            if (tmp.left < minLeft) minLeft = tmp.left
+            if (tmp.top < minTop) minTop = tmp.top
+            if (tmp.right > maxRight) maxRight = tmp.right
+            if (tmp.bottom > maxBottom) maxBottom = tmp.bottom
+        }
+
+        if (!minLeft.isFinite() || !minTop.isFinite() || !maxRight.isFinite() || !maxBottom.isFinite()) return null
+        return RectF(minLeft, minTop, maxRight, maxBottom)
     }
 }

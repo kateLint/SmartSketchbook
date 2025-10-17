@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -37,6 +40,8 @@ import com.example.smartsketchbook.ui.components.DrawingCanvas
 import com.example.smartsketchbook.ui.state.SketchbookUiState
 import com.example.smartsketchbook.ui.viewmodel.SketchbookViewModel
 import com.example.smartsketchbook.ui.util.captureComposableToBitmap
+import kotlin.math.ceil
+import kotlin.math.floor
 
 @Composable
 fun SketchbookRoute(
@@ -55,6 +60,7 @@ fun SketchbookScreen(
     val viewModel: SketchbookViewModel = hiltViewModel()
     val context = LocalContext.current
     val captureSize = remember { mutableStateOf(IntSize.Zero) }
+    val classified by viewModel.classifiedBitmap.collectAsState()
     Column(modifier = modifier.padding(16.dp)) {
         Row {
             Button(onClick = { viewModel.clearCanvas() }) { Text("Clear") }
@@ -62,7 +68,17 @@ fun SketchbookScreen(
             Button(onClick = { viewModel.onCaptureDrawing() }) { Text("Classify") }
             Spacer(modifier = Modifier.width(12.dp))
             Text(text = "Sketchbook Status: ${state.statusMessage}")
-
+            Spacer(modifier = Modifier.width(12.dp))
+            classified?.let { bmp ->
+                androidx.compose.foundation.Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = "Preprocessed Thumbnail",
+                    modifier = Modifier
+                        .size(56.dp)
+                        .border(1.dp, Color.Gray)
+                        .padding(2.dp)
+                )
+            }
         }
         Box(
             modifier = Modifier
@@ -95,7 +111,17 @@ fun SketchbookScreen(
                     ) {
                         CapturableDrawing(viewModel = viewModel)
                     }
-                    viewModel.onBitmapCaptured(bmp)
+                    val bounds = viewModel.getDrawingBounds()
+                    val finalBitmap = bounds?.let { rect ->
+                        val left = floor(rect.left).toInt().coerceIn(0, bmp.width - 1)
+                        val top = floor(rect.top).toInt().coerceIn(0, bmp.height - 1)
+                        val right = ceil(rect.right).toInt().coerceIn(left + 1, bmp.width)
+                        val bottom = ceil(rect.bottom).toInt().coerceIn(top + 1, bmp.height)
+                        val width = (right - left).coerceAtLeast(1)
+                        val height = (bottom - top).coerceAtLeast(1)
+                        Bitmap.createBitmap(bmp, left, top, width, height)
+                    } ?: bmp
+                    viewModel.onBitmapCaptured(finalBitmap)
                 }
             }
         }
