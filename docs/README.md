@@ -12,8 +12,7 @@ An Android app (Jetpack Compose + Hilt) that lets you draw digits/shapes and cla
 
 ### Screenshots
 
-![Sketch Screen](images/Screenshot_20251017_234059.png)
-
+<img src="images/Screenshot_20251017_234059.png" alt="Sketch Screen" width="400"/>
 
 ### Project Structure
 - `app/src/main/java/com/example/smartsketchbook/ui/` — Compose UI (screens, components)
