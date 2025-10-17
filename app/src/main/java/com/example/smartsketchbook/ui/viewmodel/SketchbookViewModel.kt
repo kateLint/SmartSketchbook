@@ -1,6 +1,7 @@
 package com.example.smartsketchbook.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.example.smartsketchbook.ui.state.SketchbookUiState
 import com.example.smartsketchbook.ui.state.DrawingPath
@@ -9,6 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import javax.inject.Inject
 import android.graphics.Path as AndroidPath
 import android.graphics.Bitmap
@@ -32,7 +36,8 @@ import androidx.compose.ui.graphics.toArgb
  */
 @HiltViewModel
 class SketchbookViewModel @Inject constructor(
-    private val classifier: SketchClassifier
+    private val classifier: SketchClassifier,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     // Holds all UI-related state for the Sketchbook screen.
@@ -66,16 +71,21 @@ class SketchbookViewModel @Inject constructor(
     // Loading state during classification
     val isClassifying: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
-    // Current drawing color
-    val currentDrawingColor: MutableStateFlow<Color> = MutableStateFlow(Color.Black)
-    fun setDrawingColor(color: Color) { currentDrawingColor.value = color }
+    // Current drawing color (persisted as ARGB Int)
+    private val COLOR_KEY = "current_color_argb"
+    private val colorIntFlow: StateFlow<Int> = savedStateHandle.getStateFlow(COLOR_KEY, Color.Black.toArgb())
+    val currentDrawingColor: StateFlow<Color> = colorIntFlow
+        .map { Color(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, Color.Black)
+    fun setDrawingColor(color: Color) { savedStateHandle[COLOR_KEY] = color.toArgb() }
 
     // A/B test: stroke width variant
     val isStrokeWidthVariantA: MutableStateFlow<Boolean> = MutableStateFlow(kotlin.random.Random.Default.nextBoolean())
 
-    // CPU thread count control
-    val cpuThreadCount: MutableStateFlow<Int> = MutableStateFlow(classifier.defaultCpuThreads())
-    fun setCpuThreads(threads: Int) { cpuThreadCount.value = threads }
+    // CPU thread count control (persisted)
+    private val THREAD_COUNT_KEY = "thread_count"
+    val cpuThreadCount: StateFlow<Int> = savedStateHandle.getStateFlow(THREAD_COUNT_KEY, classifier.defaultCpuThreads())
+    fun setCpuThreads(threads: Int) { savedStateHandle[THREAD_COUNT_KEY] = threads }
 
     // Hardware delegate status
     private val _hardwareDelegateStatus: MutableStateFlow<String> = MutableStateFlow("Initializing")
@@ -207,6 +217,18 @@ class SketchbookViewModel @Inject constructor(
     // Called when the user finishes drawing and wants to classify
     fun onCaptureDrawing() {
         viewModelScope.launch {
+            // Skip if canvas is empty or nearly empty
+            val hasAnyPath = _renderedPaths.value.isNotEmpty() || _currentPath.value != null
+            if (!hasAnyPath) {
+                userMessages.tryEmit("Draw something first, then tap Capture.")
+                return@launch
+            }
+            val bounds = getDrawingBounds()
+            if (bounds == null || bounds.width() < 2f || bounds.height() < 2f) {
+                userMessages.tryEmit("Draw something first, then tap Capture.")
+                return@launch
+            }
+
             isClassifying.value = true
             // Clear in-progress stroke points
             activePath.value = null
