@@ -19,7 +19,7 @@ object AvailableModels {
     val Digits = AvailableModel(
         id = "digits",
         name = "Handwritten Digits",
-        fileName = "mnist_int8.tflite",
+        fileName = "mnist_dynamic.tflite",
         labels = com.example.smartsketchbook.domain.ml.ModelLabels.MNIST_LABELS,
         source = ModelSource.ASSET,
         version = 1,

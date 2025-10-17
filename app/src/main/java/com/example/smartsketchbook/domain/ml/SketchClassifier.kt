@@ -262,8 +262,17 @@ class SketchClassifier @Inject constructor(
 
         // Prepare input bitmap at expected size using reusable target when matches classifier target
         val inputBitmap = if (inWidth == targetSize && inHeight == targetSize) {
-            val fit = if (inChannels == 3) 0.85f else 0.75f
-            BitmapPreprocessor.preprocessInto(bitmap, reusableInputBitmap, targetSize, centerByMass = true, fitFraction = fit)
+            val isRgb = inChannels == 3
+            // For MNIST digits, target inner size ~20/28 ≈ 0.72 to match training
+            val fit = if (isRgb) 0.85f else 0.72f
+            val centerByMass = true
+            BitmapPreprocessor.preprocessInto(
+                original = bitmap,
+                target = reusableInputBitmap,
+                targetSize = targetSize,
+                centerByMass = centerByMass,
+                fitFraction = fit
+            )
             reusableInputBitmap
         } else if (bitmap.width != inWidth || bitmap.height != inHeight) {
             bitmap.scale(inWidth, inHeight)
