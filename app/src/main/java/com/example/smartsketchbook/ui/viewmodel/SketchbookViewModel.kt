@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
 import com.example.smartsketchbook.domain.ml.BitmapPreprocessor
 import com.example.smartsketchbook.domain.ml.SketchClassifier
 import com.example.smartsketchbook.domain.ml.ClassificationResult
+import com.example.smartsketchbook.domain.ml.AvailableModel
+import com.example.smartsketchbook.domain.ml.AvailableModels
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -96,6 +98,29 @@ class SketchbookViewModel @Inject constructor(
 
     // First-use tip
     val showInitialTip: MutableStateFlow<Boolean> = MutableStateFlow(true)
+
+    // Current model selection
+    private val MODEL_ID_KEY = "current_model_id"
+    private val initialModel = AvailableModels.Digits
+    private val currentModelId: StateFlow<String> = savedStateHandle.getStateFlow(MODEL_ID_KEY, initialModel.id)
+    val currentModel: StateFlow<AvailableModel> = currentModelId
+        .map { id -> AvailableModels.All.firstOrNull { it.id == id } ?: initialModel }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialModel)
+
+    fun selectModel(model: AvailableModel) {
+        savedStateHandle[MODEL_ID_KEY] = model.id
+        // Reinitialize classifier with new model
+        val newCfg = com.example.smartsketchbook.domain.ml.ModelConfig(
+            modelFileName = model.fileName,
+            inputWidth = if (model.id == AvailableModels.Digits.id) 28 else 28,
+            inputHeight = if (model.id == AvailableModels.Digits.id) 28 else 28,
+            inputChannels = 1
+        )
+        classifier.loadModel(newCfg, model)
+        // Update labels source for processOutput by adjusting ModelLabels if needed
+        // (Future: make labels an instance-level source; for now, warn via status)
+        updateStatus("Model switched to ${model.name}")
+    }
 
     init {
         // Reinitialize interpreter when CPU thread count changes

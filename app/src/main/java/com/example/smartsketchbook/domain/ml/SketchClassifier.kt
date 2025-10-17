@@ -26,7 +26,7 @@ import androidx.core.graphics.scale
 @Singleton
 class SketchClassifier @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val config: ModelConfig
+    private var config: ModelConfig
 ) {
     data class InputSpec(val inputWidth: Int, val inputHeight: Int, val inputChannels: Int)
     fun modelInputSpec(): InputSpec = InputSpec(config.inputWidth, config.inputHeight, config.inputChannels)
@@ -141,8 +141,8 @@ class SketchClassifier @Inject constructor(
     }
 
     // Pre-allocated reusable buffers and bitmaps
-    private val targetSize: Int = config.inputWidth // assume square or use both dims
-    private val reusableInputBitmap: Bitmap = Bitmap.createBitmap(config.inputWidth, config.inputHeight, Bitmap.Config.ARGB_8888)
+    private var targetSize: Int = config.inputWidth // assume square or use both dims
+    private var reusableInputBitmap: Bitmap = Bitmap.createBitmap(config.inputWidth, config.inputHeight, Bitmap.Config.ARGB_8888)
     private var inputFloatBuffer: FloatBuffer? = null
     private var inputFloatByteBuffer: ByteBuffer? = null
     private var inputByteBuffer: ByteBuffer? = null
@@ -166,13 +166,38 @@ class SketchClassifier @Inject constructor(
         interpreter.close()
     }
 
+    @Synchronized
+    fun loadModel(newConfig: ModelConfig, availableModel: AvailableModel) {
+        // Cleanup
+        try { nnApiDelegate?.javaClass?.getMethod("close")?.invoke(nnApiDelegate) } catch (_: Exception) {}
+        try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
+        try { interpreter.close() } catch (_: Exception) {}
+        nnApiDelegate = null
+        gpuDelegate = null
+
+        // Update config and buffers
+        config = newConfig
+        targetSize = config.inputWidth
+        reusableInputBitmap = Bitmap.createBitmap(config.inputWidth, config.inputHeight, Bitmap.Config.ARGB_8888)
+        inputFloatBuffer = null
+        inputFloatByteBuffer = null
+        inputByteBuffer = null
+        outputArray = null
+        outputArray2D = null
+
+        // Build interpreter with delegates + warm-up
+        interpreter = buildInterpreter()
+    }
+
     fun processOutput(outputArray: FloatArray): ClassificationResult {
         if (outputArray.isEmpty()) return ClassificationResult(label = "N/A", confidence = 0f, scores = outputArray, top3Indices = emptyList())
         val indices = outputArray.indices.toList()
         val top3 = indices.sortedByDescending { outputArray[it] }.take(3)
         val maxIndex = top3.first()
         val maxValue = outputArray[maxIndex]
-        val labelStr = ModelLabels.MNIST_LABELS.getOrNull(maxIndex) ?: maxIndex.toString()
+        // Prefer dynamic labels when available via AvailableModel; fallback to static MNIST labels
+        val dynamicLabels = try { AvailableModels.All.firstOrNull { it.fileName == config.modelFileName }?.labels } catch (_: Throwable) { null }
+        val labelStr = (dynamicLabels?.getOrNull(maxIndex)) ?: ModelLabels.MNIST_LABELS.getOrNull(maxIndex) ?: maxIndex.toString()
         val label = "Predicted: $labelStr"
         return ClassificationResult(label = label, confidence = maxValue, scores = outputArray, top3Indices = top3)
     }
