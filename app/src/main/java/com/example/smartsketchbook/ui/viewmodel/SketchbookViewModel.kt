@@ -3,6 +3,7 @@ package com.example.smartsketchbook.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.example.smartsketchbook.ui.state.SketchbookUiState
+import com.example.smartsketchbook.ui.state.DrawingPath
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -34,6 +35,16 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
     private val _currentPath: MutableStateFlow<AndroidPath?> = MutableStateFlow(null)
     val currentPath: StateFlow<AndroidPath?> = _currentPath
 
+    // New: activePath holds the points of the stroke currently being drawn
+    val activePath: MutableStateFlow<DrawingPath?> = MutableStateFlow(null)
+
+    // Motion actions to drive stroke creation from UI
+    sealed class MotionAction {
+        object Start : MotionAction()
+        object Move : MotionAction()
+        object End : MotionAction()
+    }
+
     // Example function to update the status (for demonstration, though not strictly required by the prompt)
     fun updateStatus(newStatus: String) {
         _uiState.value = _uiState.value.copy(statusMessage = newStatus)
@@ -43,6 +54,7 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
         viewModelScope.launch {
             _paths.value = emptyList()
             _currentPath.value = null
+            activePath.value = null
         }
     }
 
@@ -58,10 +70,14 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
         val path = AndroidPath()
         path.moveTo(x, y)
         _currentPath.value = path
+        activePath.value = DrawingPath(points = listOf(androidx.compose.ui.geometry.Offset(x, y)))
     }
 
     fun addPoint(x: Float, y: Float) {
         _currentPath.value?.lineTo(x, y)
+        activePath.value = activePath.value?.let { current ->
+            current.copy(points = current.points + androidx.compose.ui.geometry.Offset(x, y))
+        }
     }
 
     fun endStroke() {
@@ -69,6 +85,32 @@ class SketchbookViewModel @Inject constructor() : ViewModel() {
             _paths.value = _paths.value + finished
         }
         _currentPath.value = null
+        activePath.value = null
+    }
+
+    // Unified motion handler called by UI
+    fun handleMotionEvent(offset: androidx.compose.ui.geometry.Offset, action: MotionAction) {
+        when (action) {
+            is MotionAction.Start -> {
+                val path = AndroidPath()
+                path.moveTo(offset.x, offset.y)
+                _currentPath.value = path
+                activePath.value = DrawingPath(points = listOf(offset))
+            }
+            is MotionAction.Move -> {
+                _currentPath.value?.lineTo(offset.x, offset.y)
+                activePath.value = activePath.value?.let { current ->
+                    current.copy(points = current.points + offset)
+                } ?: DrawingPath(points = listOf(offset))
+            }
+            is MotionAction.End -> {
+                _currentPath.value?.let { finished ->
+                    _paths.value = _paths.value + finished
+                }
+                _currentPath.value = null
+                activePath.value = null
+            }
+        }
     }
 
     fun exportBitmap(

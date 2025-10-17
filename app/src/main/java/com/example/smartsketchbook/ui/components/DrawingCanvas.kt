@@ -45,7 +45,7 @@ fun DrawingCanvas(
     backgroundColor: Color = Color.White
 ) {
     val paths by viewModel.paths.collectAsState()
-    val currentPath by viewModel.currentPath.collectAsState()
+    val activePath by viewModel.activePath.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
     val androidPaint = remember(strokeWidth, strokeColor) {
@@ -59,26 +59,62 @@ fun DrawingCanvas(
         }
     }
 
+    val activeStrokePaint = remember(strokeWidth, strokeColor) {
+        Paint().apply {
+            isAntiAlias = true
+            color = strokeColor.toArgb()
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            this.strokeWidth = strokeWidth * 1.15f
+        }
+    }
+
     Box(
         modifier = modifier
             .background(backgroundColor)
             .onSizeChanged { canvasSize = it }
     ) {
+        var lastOffset by remember { mutableStateOf<Offset?>(null) }
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
+                .pointerInput(viewModel) {
                     detectDragGestures(
                         onDragStart = { start: Offset ->
-                            viewModel.startStroke(start.x, start.y)
+                            lastOffset = start
+                            viewModel.handleMotionEvent(
+                                start,
+                                SketchbookViewModel.MotionAction.Start
+                            )
                         },
                         onDrag = { change, _ ->
                             val position = change.position
-                            viewModel.addPoint(position.x, position.y)
+                            lastOffset = position
+                            viewModel.handleMotionEvent(
+                                position,
+                                SketchbookViewModel.MotionAction.Move
+                            )
                             change.consume()
                         },
                         onDragEnd = {
-                            viewModel.endStroke()
+                            lastOffset?.let { finalOffset ->
+                                // Ensure last point is recorded before ending
+                                viewModel.handleMotionEvent(
+                                    finalOffset,
+                                    SketchbookViewModel.MotionAction.Move
+                                )
+                                viewModel.handleMotionEvent(
+                                    finalOffset,
+                                    SketchbookViewModel.MotionAction.End
+                                )
+                            } ?: run {
+                                // No last offset recorded; still end the stroke
+                                viewModel.handleMotionEvent(
+                                    Offset.Zero,
+                                    SketchbookViewModel.MotionAction.End
+                                )
+                            }
                             // Optional: auto-predict on finger release
                             if (canvasSize.width > 0 && canvasSize.height > 0) {
                                 viewModel.exportBitmap(
@@ -90,7 +126,11 @@ fun DrawingCanvas(
                             }
                         },
                         onDragCancel = {
-                            viewModel.endStroke()
+                            val finalOffset = lastOffset ?: Offset.Zero
+                            viewModel.handleMotionEvent(
+                                finalOffset,
+                                SketchbookViewModel.MotionAction.End
+                            )
                         }
                     )
                 }
@@ -104,8 +144,15 @@ fun DrawingCanvas(
                 paths.forEach { path ->
                     nativeCanvas.drawPath(path, androidPaint)
                 }
-                currentPath?.let { path ->
-                    nativeCanvas.drawPath(path, androidPaint)
+                activePath?.points?.takeIf { it.isNotEmpty() }?.let { points ->
+                    val tempPath = Path()
+                    val first = points.first()
+                    tempPath.moveTo(first.x, first.y)
+                    for (i in 1 until points.size) {
+                        val p = points[i]
+                        tempPath.lineTo(p.x, p.y)
+                    }
+                    nativeCanvas.drawPath(tempPath, activeStrokePaint)
                 }
             }
         }
