@@ -83,19 +83,59 @@ object BitmapPreprocessor {
      * Draw scaled+centered [original] into [target] which must be pre-allocated to targetSize x targetSize.
      * Background is white.
      */
-    fun preprocessInto(original: Bitmap, target: Bitmap, targetSize: Int = 28) {
+    fun preprocessInto(
+        original: Bitmap,
+        target: Bitmap,
+        targetSize: Int = 28,
+        centerByMass: Boolean = true,
+        fitFraction: Float = 0.9f
+    ) {
         val canvas = Canvas(target)
         canvas.drawColor(Color.WHITE)
 
         val srcW = original.width.coerceAtLeast(1)
         val srcH = original.height.coerceAtLeast(1)
-        val scale = targetSize.toFloat() / maxOf(srcW, srcH).toFloat()
+        val base = maxOf(srcW, srcH).toFloat()
+        val scale = (targetSize * fitFraction) / base
         val scaledW = (srcW * scale).toInt().coerceAtLeast(1)
         val scaledH = (srcH * scale).toInt().coerceAtLeast(1)
-        val left = ((targetSize - scaledW) / 2f)
-        val top = ((targetSize - scaledH) / 2f)
+        val targetCenter = (targetSize - 1) / 2f
         val scaled = if (srcW == scaledW && srcH == scaledH) original
         else Bitmap.createScaledBitmap(original, scaledW, scaledH, true)
+
+        var left = (targetSize - scaledW) / 2f
+        var top = (targetSize - scaledH) / 2f
+
+        if (centerByMass) {
+            // Compute intensity centroid (using inverted grayscale to emphasize strokes)
+            val px = IntArray(scaledW * scaledH)
+            scaled.getPixels(px, 0, scaledW, 0, 0, scaledW, scaledH)
+            var sum = 0f
+            var sumX = 0f
+            var sumY = 0f
+            var idx = 0
+            for (y in 0 until scaledH) {
+                for (x in 0 until scaledW) {
+                    val c = px[idx++]
+                    val r = (c shr 16) and 0xFF
+                    val g = (c shr 8) and 0xFF
+                    val b = c and 0xFF
+                    val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
+                    val intensity = 1f - gray
+                    sum += intensity
+                    sumX += x * intensity
+                    sumY += y * intensity
+                }
+            }
+            if (sum > 1e-6f) {
+                val cx = sumX / sum
+                val cy = sumY / sum
+                // Place centroid at target center
+                left = targetCenter - cx
+                top = targetCenter - cy
+            }
+        }
+
         canvas.drawBitmap(scaled, left, top, null)
     }
 

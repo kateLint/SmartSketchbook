@@ -30,7 +30,12 @@ class SketchClassifier @Inject constructor(
             setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
             // XNNPACK/NNAPI may be enabled by default depending on TF Lite version
         }
-        Interpreter(loadModelFile(context, config.modelFileName), options)
+        try {
+            Interpreter(loadModelFile(context, config.modelFileName), options)
+        } catch (e: Exception) {
+            Log.e("SketchClassifier", "Failed to load TFLite model: ${config.modelFileName}", e)
+            throw e
+        }
     }
 
     // Pre-allocated reusable buffers and bitmaps
@@ -83,6 +88,12 @@ class SketchClassifier @Inject constructor(
         val inHeight = if (inShape.size >= 2) inShape[1] else config.inputHeight
         val inWidth = if (inShape.size >= 3) inShape[2] else config.inputWidth
         val inChannels = if (inShape.size >= 4) inShape[3] else config.inputChannels
+
+        // Validate input shape against config and expected buffers
+        if (inShape.size < 4 || inShape[0] != 1 || inWidth != config.inputWidth || inHeight != config.inputHeight || inChannels != config.inputChannels) {
+            val shapeStr = inShape.joinToString(prefix = "[", postfix = "]")
+            throw IllegalStateException("Model input shape $shapeStr does not match config (${config.inputWidth}x${config.inputHeight}x${config.inputChannels}, batch=1)")
+        }
 
         // Prepare input bitmap at expected size using reusable target when matches classifier target
         val inputBitmap = if (inWidth == targetSize && inHeight == targetSize) {
@@ -156,6 +167,7 @@ class SketchClassifier @Inject constructor(
         val outputTensor = interpreter.getOutputTensor(0)
         val outType = outputTensor.dataType()
         val outShape = outputTensor.shape() // e.g., [1, numClasses]
+        val outTotal = outShape.fold(1) { acc, v -> acc * v }
 
         // Simple path: 1xN FLOAT32 => FloatArray(N) with interpreter.run(input, outputArray)
         if (outType == DataType.FLOAT32 && outShape.isNotEmpty()) {
@@ -191,7 +203,12 @@ class SketchClassifier @Inject constructor(
             else -> throw IllegalArgumentException("Unsupported output type: $outType")
         }
         val outputBuffer = ByteBuffer.allocateDirect(outElems * outBytesPerElem).order(ByteOrder.nativeOrder())
-        interpreter.run(inputBuffer, outputBuffer)
+        try {
+            interpreter.run(inputBuffer, outputBuffer)
+        } catch (e: Exception) {
+            Log.e("SketchClassifier", "Interpreter.run failed with outShape=${outShape.joinToString()}", e)
+            throw e
+        }
         outputBuffer.rewind()
         val result = FloatArray(outElems)
         when (outType) {
