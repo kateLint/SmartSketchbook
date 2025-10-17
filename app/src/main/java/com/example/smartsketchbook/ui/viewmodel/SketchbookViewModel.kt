@@ -190,18 +190,20 @@ class SketchbookViewModel @Inject constructor(
     // Call after receiving a captured drawing bitmap from UI
     fun onBitmapCaptured(captured: Bitmap) {
         viewModelScope.launch {
-            val preprocessed = BitmapPreprocessor.preprocessBitmap(captured, targetSize = 28)
-            _classifiedBitmap.value = preprocessed
-            // Run synchronous inference and post-process
-            runCatching {
-                val logits = classifier.classify(preprocessed)
+            try {
+                val (preprocessed, logits) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    val prep = BitmapPreprocessor.preprocessBitmap(captured, targetSize = 28)
+                    val out = classifier.classify(prep)
+                    prep to out
+                }
+                _classifiedBitmap.value = preprocessed
                 val result = classifier.processOutput(logits)
                 _classificationResult.value = result
                 updateStatus("${result.label} (${String.format("%.1f%%", result.confidence * 100f)})")
-            }.onFailure {
-                val msg = it.message ?: it.javaClass.simpleName
+            } catch (t: Throwable) {
+                val msg = t.message ?: t.javaClass.simpleName
                 updateStatus("Classification failed: $msg")
-            }.also {
+            } finally {
                 isClassifying.value = false
             }
         }
