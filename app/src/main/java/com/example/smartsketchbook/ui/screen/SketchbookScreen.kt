@@ -17,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.Slider
@@ -73,6 +74,7 @@ fun SketchbookScreen(
     val classified by viewModel.classifiedBitmap.collectAsState()
     val result by viewModel.classificationResult.collectAsState()
     val isClassifying by viewModel.isClassifying.collectAsState()
+            val isDownloading by viewModel.isDownloadingModel.collectAsState()
     val strokeWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
     val haptics = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -134,6 +136,13 @@ fun SketchbookScreen(
                         .align(Alignment.Center))
                 }
             }
+                        if (isDownloading) {
+                            Box(modifier = Modifier
+                                .matchParentSize()) {
+                                CircularProgressIndicator(modifier = Modifier
+                                    .align(Alignment.Center))
+                            }
+                        }
         }
 
         LaunchedEffect(viewModel, captureSize.value) {
@@ -171,7 +180,11 @@ fun SketchbookScreen(
         }
         LaunchedEffect(Unit) {
             viewModel.userMessages.collect { msg ->
-                snackbarHostState.showSnackbar(message = msg)
+                val result = snackbarHostState.showSnackbar(message = msg, actionLabel = "Download", duration = SnackbarDuration.Short)
+                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    // Trigger model update using current selection
+                    viewModel.handleModelUpdate()
+                }
             }
         }
     }

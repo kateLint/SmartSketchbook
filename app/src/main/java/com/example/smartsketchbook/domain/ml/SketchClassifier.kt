@@ -40,6 +40,13 @@ class SketchClassifier @Inject constructor(
 
     private fun buildInterpreter(cpuThreads: Int? = null): Interpreter {
         val options = Interpreter.Options()
+        // Broad compatibility/perf options. Wrapped in try/catch to avoid API mismatch.
+        try { options.setUseXNNPACK(true) } catch (_: Throwable) {}
+        try { options.setAllowFp16PrecisionForFp32(true) } catch (_: Throwable) {}
+        // Some TF Lite versions expose control-flow improvements
+        try { options.javaClass.getMethod("setUseNewControlFlow", Boolean::class.javaPrimitiveType).invoke(options, true) } catch (_: Throwable) {}
+        // NOTE: If model uses Select TF Ops, include the Select-TF-Ops runtime dependency and/or delegate.
+        // TODO: If model uses Select TF Ops, need to include the TFLite-Select-TF-Ops dependency and potentially a corresponding delegate.
         // Skip delegates on emulators to avoid known GL/NNAPI issues
         val onEmulator = isProbablyEmulator()
         // Try NNAPI first on Android 9+ (API 28)
@@ -164,6 +171,11 @@ class SketchClassifier @Inject constructor(
         try { nnApiDelegate?.javaClass?.getMethod("close")?.invoke(nnApiDelegate) } catch (_: Exception) {}
         try { gpuDelegate?.javaClass?.getMethod("close")?.invoke(gpuDelegate) } catch (_: Exception) {}
         interpreter.close()
+    }
+
+    // Placeholder for where custom ops would be registered from native code (via JNI/NDK)
+    fun registerCustomOp(opName: String, nativeHandle: Long) {
+        Log.i("SketchClassifier", "registerCustomOp requested for $opName (handle=$nativeHandle). This is a placeholder; real registration requires native code.")
     }
 
     @Synchronized

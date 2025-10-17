@@ -104,6 +104,10 @@ class SketchbookViewModel @Inject constructor(
     // First-use tip
     val showInitialTip: MutableStateFlow<Boolean> = MutableStateFlow(true)
 
+    // Download progress state
+    private val _isDownloadingModel: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    val isDownloadingModel: StateFlow<Boolean> = _isDownloadingModel
+
     // Current model selection
     private val MODEL_ID_KEY = "current_model_id"
     private val initialModel = AvailableModels.Digits
@@ -143,6 +147,28 @@ class SketchbookViewModel @Inject constructor(
         // Update labels source for processOutput by adjusting ModelLabels if needed
         // (Future: make labels an instance-level source; for now, warn via status)
         updateStatus("Model switched to ${model.name}")
+    }
+
+    fun handleModelUpdate() {
+        val model = currentModel.value
+        viewModelScope.launch {
+            _isDownloadingModel.value = true
+            try {
+                var lastProgress = 0f
+                val file = modelManager.downloadModel(model) { p ->
+                    lastProgress = p
+                }
+                modelManager.saveModelVersion(model.id, model.version)
+                // Re-select using downloaded path
+                val downloadedModel = model.copy(source = com.example.smartsketchbook.domain.ml.ModelSource.DOWNLOADED, fileName = file.name)
+                selectModel(downloadedModel)
+                userMessages.tryEmit("${model.name} v${model.version} is ready!")
+            } catch (_: Throwable) {
+                userMessages.tryEmit("Download failed for ${model.name}.")
+            } finally {
+                _isDownloadingModel.value = false
+            }
+        }
     }
 
     init {
