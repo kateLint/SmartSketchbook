@@ -32,6 +32,12 @@ class SketchClassifier @Inject constructor(
         Interpreter(loadModelFile(context, MODEL_ASSET_PATH), options)
     }
 
+    // Pre-allocated reusable buffers and bitmaps
+    private val targetSize: Int = 28
+    private val reusableInputBitmap: Bitmap = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+    private var inputFloatBuffer: FloatBuffer? = null
+    private var outputArray: FloatArray? = null
+
     /**
      * Run inference with a simple single-input/single-output signature.
      * Adjust types/shapes based on your model.
@@ -75,8 +81,11 @@ class SketchClassifier @Inject constructor(
         val inWidth = if (inShape.size >= 3) inShape[2] else bitmap.width
         val inChannels = if (inShape.size >= 4) inShape[3] else 1
 
-        // Prepare input bitmap at expected size
-        val inputBitmap = if (bitmap.width != inWidth || bitmap.height != inHeight) {
+        // Prepare input bitmap at expected size using reusable target when matches classifier target
+        val inputBitmap = if (inWidth == targetSize && inHeight == targetSize) {
+            BitmapPreprocessor.preprocessInto(bitmap, reusableInputBitmap, targetSize)
+            reusableInputBitmap
+        } else if (bitmap.width != inWidth || bitmap.height != inHeight) {
             Bitmap.createScaledBitmap(bitmap, inWidth, inHeight, true)
         } else bitmap
 
@@ -85,10 +94,19 @@ class SketchClassifier @Inject constructor(
         var inputFloatView: FloatBuffer? = null
         val inputBuffer: ByteBuffer = when (inType) {
             DataType.FLOAT32 -> {
-                val byteBuf = ByteBuffer.allocateDirect(numInputElems * 4).order(ByteOrder.nativeOrder())
+                val byteBuf = (inputFloatBuffer?.let { it.capacity() == numInputElems }?.takeIf { it }?.let {
+                    // reuse backing buffer
+                    inputFloatBuffer!!.rewind()
+                    inputFloatBuffer!!.let { (it as java.nio.Buffer).rewind(); it }
+                    (inputFloatBuffer as java.nio.Buffer).let { (it as java.nio.Buffer).rewind() }
+                    // we cannot get underlying ByteBuffer from FloatBuffer portably; re-create
+                    ByteBuffer.allocateDirect(numInputElems * 4).order(ByteOrder.nativeOrder())
+                } ?: run {
+                    inputFloatBuffer = null
+                    ByteBuffer.allocateDirect(numInputElems * 4).order(ByteOrder.nativeOrder())
+                })
                 val floatView: FloatBuffer = byteBuf.asFloatBuffer()
-                val normalized = BitmapPreprocessor.bitmapToFloatArray(inputBitmap, channels = inChannels)
-                floatView.put(normalized)
+                BitmapPreprocessor.bitmapToFloatBuffer(inputBitmap, channels = inChannels, dest = floatView)
                 // Log first few normalized values for verification (should be in [0,1])
                 floatView.rewind()
                 val previewCount = minOf(5, floatView.remaining())
@@ -140,9 +158,12 @@ class SketchClassifier @Inject constructor(
         if (outType == DataType.FLOAT32 && outShape.isNotEmpty()) {
             val numClasses = outShape.last()
             if (numClasses > 0) {
-                val outputArray = FloatArray(numClasses)
-                interpreter.run(inputBuffer, outputArray)
-                return outputArray
+                if (outputArray == null || outputArray!!.size != numClasses) {
+                    outputArray = FloatArray(numClasses)
+                }
+                val out = outputArray!!
+                interpreter.run(inputBuffer, out)
+                return out
             }
         }
 
